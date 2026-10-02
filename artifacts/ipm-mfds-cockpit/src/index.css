@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+:root {
+  color-scheme: dark;
+  --background: 222 38% 6%;
+  --foreground: 216 31% 91%;
+  --card: 222 42% 10%;
+  --card-foreground: 216 31% 91%;
+  --card-border: 218 32% 18%;
+  --border: 218 32% 18%;
+  --input: 218 32% 21%;
+  --popover: 222 42% 10%;
+  --popover-foreground: 216 31% 91%;
+  --primary: 199 89% 60%;
+  --primary-foreground: 222 38% 6%;
+  --secondary: 219 32% 15%;
+  --secondary-foreground: 216 31% 91%;
+  --muted: 219 32% 15%;
+  --muted-foreground: 215 16% 59%;
+  --accent: 219 32% 15%;
+  --accent-foreground: 216 31% 91%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: 199 89% 60%;
+  --chart-1: 199 89% 60%;
+  --chart-2: 158 64% 42%;
+  --chart-3: 38 92% 50%;
+  --chart-4: 0 84% 60%;
+  --chart-5: 263 70% 60%;
+  --sidebar: 222 38% 6%;
+  --sidebar-foreground: 216 31% 91%;
+  --sidebar-border: 218 32% 18%;
+  --sidebar-primary: 199 89% 60%;
+  --sidebar-primary-foreground: 222 38% 6%;
+  --sidebar-accent: 219 32% 15%;
+  --sidebar-accent-foreground: 216 31% 91%;
+  --sidebar-ring: 199 89% 60%;
+  --radius: 0.45rem;
+  --app-font-sans: 'Manrope', sans-serif;
+  --app-font-mono: 'DM Mono', monospace;
+  --app-font-serif: Georgia, serif;
+  --sky: #38bdf8;
+  --emerald: #10b981;
+  --amber: #f59e0b;
+  --crimson: #ef4444;
+  --violet: #8b5cf6;
+}
+.dark { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100dvh;
+  background: #090d16;
+  color: #dce5f1;
+  font-family: var(--app-font-sans);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.mono { font-family: var(--app-font-mono); font-variant-numeric: tabular-nums; }
+.panel {
+  background: #0d1322;
+  border: 1px solid #202b3e;
+  border-radius: 7px;
+}
+.panel-title {
+  color: #8ea0b9;
+  font: 500 10px var(--app-font-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.status-nominal { color: var(--emerald); }
+.status-warning { color: var(--amber); }
+.status-critical { color: var(--crimson); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.status-dot.nominal { background: var(--emerald); }
+.status-dot.warning { background: var(--amber); }
+.status-dot.critical { background: var(--crimson); }
+.grid-bg {
+  background-image: linear-gradient(rgba(56,189,248,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(56,189,248,.025) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.soft-in { animation: rise-in .35s ease-out both; }
+@keyframes rise-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.critical-pulse { animation: alert-pulse 2s ease-in-out infinite; }
+@keyframes alert-pulse { 0%,100% { box-shadow: 0 0 0 rgba(239,68,68,0); } 50% { box-shadow: 0 0 20px rgba(239,68,68,.16); } }
+.thin-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: #344158; border-radius: 8px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

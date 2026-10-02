@@ -1,0 +1,149 @@
+ROLE
+You are a Senior Frontend Architect and Industrial UI/UX designer (Industrial IoT, cyber-physical systems, real-time dashboards). Build the complete frontend for "IPM-MFDS: Intelligent Predictive Maintenance & Machine Failure Detection System" (Problem Statement 8), a hackathon project. This frontend is Layer 5 (Ops & Actuation) of a 6-layer architecture. It contains two things: (1) a Live Chaos Slider Panel for judges and (2) a Technician Cockpit UI. A third element, the Automated Work-Order PDF download, is triggered from the cockpit.
+
+TECH STACK
+- Next.js (App Router) or Vite + React 18, TypeScript
+- Tailwind CSS, lucide-react icons, Recharts (use Chart.js only if Recharts lags)
+- Zustand (or useReducer + Context) for state. No Redux.
+- Web Audio API for the alert chime (no audio file dependency)
+
+THE BACKEND (what you are talking to)
+FastAPI gateway with an asyncio pub/sub bus. Pipeline per tick:
+ Physics-coupled simulator -> Pydantic sanitizer -> Feature preprocessing (30-sample rolling stats) -> Dual AI engine (Track A: Isolation Forest anomaly score 0-100; Track B: Random Forest/XGBoost failure probability P(failure in N hrs)) -> Risk Engine (fuses both + ISO 10816-3 vibration limits + EWMA smoothing + 3-tick lockout) -> XAI attribution + RUL -> WebSocket broadcast at 10-20 FPS.
+Hot ring buffer (deque, maxlen=1000) feeds instant chart hydration. SQLite (WAL) stores the cold audit data: telemetry history, prediction logs, maintenance records, dispatched work orders.
+
+FLEET (3 machines)
+- CNC Mill #1 (Spindle Lathe), id "CNC-01", the actively monitored/demo machine
+- CNC Mill #2 (Heavy Milling), id "CNC-02"
+- Ender-3 Pro (3D Printer), id "PRN-01"
+Fleet metadata comes from GET /machines. The WebSocket carries ticks for all machines, tagged by machine_id. Demux them into a per-machine store. The selected machine drives the whole cockpit.
+
+VISUAL DESIGN
+- Dark industrial sci-fi theme: page bg #090D16, cards #0D1322, 1px borders.
+- Accent colors: sky #38BDF8, emerald #10B981, amber #F59E0B, crimson #EF4444, violet #8B5CF6.
+- Status colors (STRICT): NOMINAL = emerald, WARNING = amber, CRITICAL = crimson.
+- Monospace tabular numerals (JetBrains Mono / font-mono tabular-nums) for all live values so digits don't jitter.
+- Designed for a 1920x1080 projector, but must not break at 1366x768.
+- Subtle motion only: gauge easing, soft glow on critical. Never animate in a way that causes layout shift.
+
+LAYOUT (3 columns under a header)
+
+HEADER
+- Title: "IPM-MFDS · TECHNICIAN PREDICTIVE COCKPIT"
+- Connection badge: pulsing green "LIVE · {fps} FPS · WS" (compute fps from the actual message rate), amber "RECONNECTING…" with exponential backoff, red "OFFLINE (MOCK MODE)".
+- Closed-Loop Latency chip (key demo feature): when a chaos command is sent, start a timer; stop it when the first WS tick for that machine reflects the change (health score moves or fault flag appears). Show "Last loop: 312 ms" and color it green if <400ms, amber otherwise.
+- Audio toggle (mute/unmute).
+
+FLEET BAR (3 cards)
+Each card shows: machine name + type, status badge (🟢 NOMINAL / 🟡 WARNING / 🔴 CRITICAL), mini health score, operating hours (e.g. "1,248.5 hrs"), and service age ("320 hrs since service"). The selected card has a sky-blue glow. A critical card pulses red.
+
+LEFT COLUMN: Control + Core Health
+A. LIVE CHAOS SLIDER PANEL (crimson dashed/glowing border, visually the star of the demo)
+   - Header: "⚡ LIVE CHAOS FAULT INJECTOR · JUDGE CONTROL"
+   - Fault type selector (segmented control): Bearing Spall | Spindle Overheat | Belt Slip | Gradual Drift
+   - Preset buttons, each sets fault type + slider value and fires immediately (no debounce on button clicks):
+       [💥 Bearing Spall] -> bearing_spall, 85
+       [🔥 Spindle Overheat] -> spindle_overheat, 90
+       [⚙️ Belt Slip] -> belt_slip, 75
+       [🔄 Self-Heal / Reset] -> intensity 0
+   - Slider 0-100% "Fault Intensity". Debounce slider drag by 150 ms, then PATCH /chaos/inject. Show the live value next to the thumb. Optimistically update the slider UI, but never fake the health/gauge data; those only change when real WS ticks arrive.
+   - Small caption under the panel: the active injected fault, e.g. "Injecting: Bearing Spall @ 85%".
+   - Handle PATCH failure with a toast and revert the slider.
+B. RADIAL HEALTH GAUGE
+   - Semi-circular SVG gauge, 0-100 from `health.score`, animated smoothly.
+   - Color driven by `health.status` from the backend (do NOT recompute thresholds client-side; the backend applies EWMA + 3-tick lockout, so the status may lag the raw score intentionally). For reference: >75 NOMINAL, 40-75 WARNING, <40 CRITICAL.
+   - Center: big score number + status label. Below: ISO 10816-3 zone chip (e.g. "Zone D · Danger").
+C. DUAL-TRACK AI SCORES
+   - Two compact meters side by side:
+       Track A, "Anomaly Score" (0-100, Isolation Forest, unsupervised novelty)
+       Track B, "Failure Probability" ("P(failure in N hrs)", supervised classifier)
+   - Tiny sparkline under each of the last 60 s.
+D. RUL COUNTDOWN CARD
+   - Large "3.4 hrs remaining", confidence interval "CI: 2.6 – 4.3 hrs", and a thin progress bar. When rul_hours is null (healthy), show "No failure predicted".
+
+CENTER COLUMN: Live Multi-Trace Telemetry (the 6 physics inputs)
+Three stacked Recharts line charts, each with a rolling 60-second window and synced hover cursor:
+ 1. Vibration: RMS (mm/s) + Crest Factor. Draw ISO 10816-3 zone threshold lines as dashed ReferenceLines.
+ 2. Thermal: Temperature (°C) + rate of change dT/dt.
+ 3. Power & Drive: Motor Current (A) + Spindle RPM, with RPM volatility shown as a small badge.
+Additional strip below the charts: Workload ratio (%) as a horizontal gauge, plus Operating Hours and Service Age as stat tiles.
+Requirements:
+ - On mount (and on machine switch), call GET /history?machine_id=...&limit=1000 to hydrate charts from the backend ring buffer so charts are never empty.
+ - Keep a client-side ring buffer per machine (cap ~1200 points). Append WS ticks to it. Throttle chart re-renders with requestAnimationFrame to about 10 renders/s even if WS runs at 20 FPS. Set isAnimationActive={false} on Recharts lines.
+ - Chart line color shifts to red when that machine is CRITICAL.
+
+RIGHT COLUMN: XAI + Action
+A. XAI ROOT-CAUSE ATTRIBUTION
+   - Horizontal bars from `diagnostics.xai_contributors`, sorted descending, width = weight*100%, animated. Top contributor is red, second amber, others blue/sky.
+   - Diagnosis banner: "Diagnosed Failure Mode: {probable_fault} ({confidence_pct}% confidence)". Show "No fault detected" when nominal.
+B. MAINTENANCE & SERVICE HISTORY
+   - Compact table from GET /maintenance?machine_id=...: date (relative, e.g. "12 days ago"), action, technician, part replaced. Include a "service age" summary row.
+C. EMERGENCY ACTION & WORK-ORDER
+   - When status transitions to CRITICAL (edge-triggered, once per transition, not every tick): flash a full-width red alert banner ("CRITICAL: {fault}. Failure imminent. Work order auto-generated."), play a 2-tone chime via Web Audio, and make the button glow.
+   - Button: "📄 DOWNLOAD WORK-ORDER PDF" calls GET /work-order/pdf?machine_id=... and triggers a blob download named `WO_{machine_id}_{timestamp}.pdf`. Show a loading spinner and an error toast on failure. Disabled/greyed (with tooltip) unless status is WARNING or CRITICAL.
+   - Preview line under the button describing the PDF contents: ISO 10816 violation stamp, exact spare part (e.g. SKF 6205-2RSH bearing), failure root cause with sensor proof, and prescribed maintenance SOP steps.
+   - Banner clears automatically when status returns to NOMINAL (e.g. after Reset), with a small "Resolved" confirmation.
+
+DATA CONTRACTS
+
+1) WebSocket: ws://localhost:8000/ws/telemetry/live (configurable via NEXT_PUBLIC_WS_URL). One JSON message per machine tick, 10-20 FPS:
+{
+  "machine_id": "CNC-01",
+  "timestamp": "2026-10-02T18:30:15.102Z",
+  "telemetry": {
+    "temperature_c": 64.2,
+    "temp_rate_c_per_min": 1.8,
+    "vibration_rms_mm_s": 4.12,
+    "vibration_crest_factor": 4.85,
+    "motor_current_a": 6.15,
+    "spindle_rpm": 4920,
+    "rpm_volatility": 0.07,
+    "workload_pct": 85.0,
+    "operating_hours": 1248.5,
+    "service_age_hrs": 320.0
+  },
+  "ai": {
+    "anomaly_score": 87,
+    "failure_probability": 0.91,
+    "horizon_hrs": 24
+  },
+  "health": {
+    "score": 34,
+    "status": "CRITICAL",
+    "color": "#EF4444",
+    "iso_zone": "Zone D (Danger)"
+  },
+  "diagnostics": {
+    "probable_fault": "Bearing Spall",
+    "confidence_pct": 91.4,
+    "xai_contributors": [
+      { "sensor": "Vibration Crest Factor", "weight": 0.48 },
+      { "sensor": "Vibration RMS", "weight": 0.28 },
+      { "sensor": "Motor Current", "weight": 0.14 },
+      { "sensor": "Temperature", "weight": 0.10 }
+    ]
+  },
+  "prognostics": { "rul_hours": 3.4, "rul_ci": [2.6, 4.3] },
+  "chaos": { "active": true, "fault_type": "bearing_spall", "intensity": 85 }
+}
+Treat `diagnostics.probable_fault` and `prognostics.rul_hours` as nullable when healthy. Never crash on missing or null fields. Use optional chaining and defaults.
+
+2) PATCH http://localhost:8000/chaos/inject (configurable via NEXT_PUBLIC_API_URL)
+   Body: { "machine_id": "CNC-01", "fault_type": "bearing_spall" | "spindle_overheat" | "belt_slip" | "gradual_drift", "intensity": 0-100 }
+   Intensity 0 means heal/reset.
+
+3) GET /machines -> [{ "machine_id", "name", "type", "operating_hours", "service_age_hrs" }]
+4) GET /history?machine_id=CNC-01&limit=1000 -> array of the same tick shape as the WS payload, oldest first
+5) GET /maintenance?machine_id=CNC-01 -> [{ "date": ISO, "action": str, "technician": str, "part": str|null }]
+6) GET /work-order/pdf?machine_id=CNC-01 -> application/pdf blob
+
+ENGINEERING REQUIREMENTS
+- Put all backend access in one `api.ts` and one `useTelemetrySocket()` hook. The hook handles auto-reconnect with exponential backoff (500 ms to 5 s), a heartbeat/stale-data detector (no message for 2 s -> mark "STALE"), and clean teardown.
+- MOCK MODE: `NEXT_PUBLIC_USE_MOCK=true` (and automatic fallback if the WS can't connect within 3 s). A `mockEngine.ts` simulates all 3 machines at 20 FPS with realistic physics-ish noise, and reacts to the chaos slider locally (intensity changes raise vibration/crest factor/temperature, lower health, produce XAI weights, RUL, anomaly score, failure probability, and ISO zone) so the entire UI is demoable with no backend. Show a visible "MOCK DATA" badge when active.
+- Strong TypeScript types for every contract above (`types.ts`).
+- Components in separate files: Header, FleetBar, ChaosPanel, HealthGauge, AiScores, RulCard, TelemetryCharts, XaiPanel, MaintenanceTable, ActionPanel, AlertBanner.
+- Accessibility: status is never conveyed by color alone (always icon/text too); aria-labels on the slider and buttons; keyboard-operable.
+- Performance target: 20 FPS stream with zero visible lag; chart renders are throttled; no unnecessary re-renders (selectors/memoization).
+
+DELIVERABLE
+Output the full project: file tree, package.json dependencies, every component file, the hook, the mock engine, types, env example, and run instructions. The result must run immediately with `npm install && npm run dev` in mock mode, and connect to the real backend by changing only the env vars.

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "IPM-MFDS Technician Cockpit"
+description = "A real-time industrial predictive-maintenance cockpit for monitoring machine health, injecting demo faults, reviewing diagnoses, and dispatching technician work orders."
+version = "1.0.0"
+id = "artifacts/ipm-mfds-cockpit"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18305
+
+[services.development]
+run = "pnpm --filter @workspace/ipm-mfds-cockpit run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ipm-mfds-cockpit", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ipm-mfds-cockpit/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18305"
+BASE_PATH = "/"
