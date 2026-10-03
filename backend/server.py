@@ -20,24 +20,19 @@ import os
 import base64
 from typing import Dict, List, Any, Optional
 from collections import deque
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from simulator import FleetSimulator
-from ai_engine import DualTrackAIEngine
 from db import (
     init_db, log_telemetry_batch, get_machine_list,
     get_maintenance_history, get_recent_history, log_work_order,
     sign_off_work_order, get_work_orders
 )
 from pdf_generator import generate_work_order_pdf
-
-# Global instances
-fleet = FleetSimulator()
-ai_engine = DualTrackAIEngine()
 
 # Load environment variables from backend/.env if present
 try:
@@ -52,6 +47,19 @@ try:
                         os.environ[_k.strip()] = _v.strip()
 except Exception as _e:
     print(f"[ENV Warning] Failed to load .env: {_e}")
+
+# Keep expensive model training out of module import. FastAPI startup creates
+# the engine before serving requests; get_ai_engine also supports direct use.
+fleet = FleetSimulator()
+ai_engine: Optional["DualTrackAIEngine"] = None
+
+
+def get_ai_engine() -> "DualTrackAIEngine":
+    global ai_engine
+    if ai_engine is None:
+        from ai_engine import DualTrackAIEngine
+        ai_engine = DualTrackAIEngine()
+    return ai_engine
 
 # In-Memory Ring Buffer: stores last 1,000 ticks per machine for instant UI hydration
 BUFFER_MAX = 1000
@@ -74,8 +82,8 @@ machine_last_alert_time: Dict[str, float] = {}
 active_connections: List[WebSocket] = []
 
 class ChaosRequest(BaseModel):
-    machine_id: str = Field(pattern=r"^(CNC-01|CNC-02|PRN-01)$")
-    fault_type: str = Field(pattern=r"^(bearing_spall|spindle_overheat|belt_slip|gradual_drift)$")
+    machine_id: str = Field(pattern=r"^(CNC-01|CNC-02|PRN-01|PC-01)$")
+    fault_type: str = Field(pattern=r"^(bearing_spall|spindle_overheat|belt_slip|gradual_drift|current_overload|cascading_failure)$")
     intensity: float = Field(ge=0, le=100)
 
 class SignOffRequest(BaseModel):
@@ -103,13 +111,14 @@ def get_auto_alert_reason(
 async def lifespan(app: FastAPI):
     # Startup: Initialize Database and seed ring buffers
     init_db()
+    engine = get_ai_engine()
     print("[Server Startup] Database initialized. Seeding initial baseline telemetry buffer...")
     now = time.time()
     for i in range(100):
         t_hist = now - (100 - i) * 0.1
         for m_id, sim in fleet.simulators.items():
             raw = sim.generate_raw_tick(timestamp=t_hist)
-            evaluated = ai_engine.evaluate_tick(raw)
+            evaluated = engine.evaluate_tick(raw)
             ring_buffers[m_id].append(evaluated)
             latest_ticks[m_id] = evaluated
 
@@ -117,15 +126,23 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(background_telemetry_loop())
     yield
     task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
     print("[Server Shutdown] Stopped telemetry loop.")
 
 app = FastAPI(title="MachinexAI Telemetry & AI Gateway", lifespan=lifespan)
 
-# Allow CORS for React frontend
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -143,7 +160,7 @@ async def background_telemetry_loop():
             t_now = time.time()
             for m_id, sim in fleet.simulators.items():
                 raw = sim.generate_raw_tick(timestamp=t_now)
-                evaluated = ai_engine.evaluate_tick(raw)
+                evaluated = get_ai_engine().evaluate_tick(raw)
 
                 # Alert when the machine enters Critical or crosses / sharply
                 # increases above the elevated-risk threshold.
@@ -220,7 +237,7 @@ def get_model_metrics():
             "failure_risk": model["failure_validation"],
             "fault_diagnosis": model["diagnosis_validation"],
         }
-        for machine_id, model in ai_engine.models.items()
+        for machine_id, model in get_ai_engine().models.items()
     }
 
 @app.get("/history")
@@ -265,7 +282,7 @@ async def inject_chaos(req: ChaosRequest):
 
     # Force immediate tick
     raw = sim.generate_raw_tick()
-    evaluated = ai_engine.evaluate_tick(raw)
+    evaluated = get_ai_engine().evaluate_tick(raw)
     ring_buffers[req.machine_id].append(evaluated)
     latest_ticks[req.machine_id] = evaluated
 
@@ -403,7 +420,7 @@ async def sign_off_work_order_endpoint(req: SignOffRequest):
     sim = fleet.get_machine(req.machine_id)
     if sim:
         raw = sim.generate_raw_tick()
-        evaluated = ai_engine.evaluate_tick(raw)
+        evaluated = get_ai_engine().evaluate_tick(raw)
         ring_buffers[req.machine_id].append(evaluated)
         latest_ticks[req.machine_id] = evaluated
         if active_connections:

@@ -32,6 +32,9 @@ class MachineSimulator:
 
         # State tracking
         self.active_fault: Optional[str] = None
+        self.target_fault: Optional[str] = None
+        self.target_intensity: float = 0.0
+        self.current_intensity: float = 0.0
         self.intensity: float = 0.0  # 0 to 100
         self.last_temp = 48.0 if machine_id == 'PRN-01' else 56.0
         self.last_tick_time = time.time()
@@ -39,13 +42,28 @@ class MachineSimulator:
 
     def set_fault(self, fault_type: Optional[str], intensity: float):
         if intensity <= 0 or fault_type is None:
-            self.active_fault = None
-            self.intensity = 0.0
-            # Do NOT artificially snap temperature down to base.
-            # Allow Newton's law of cooling in generate_raw_tick() to cool down gradually!
+            self.target_fault = None
+            self.target_intensity = 0.0
         else:
-            self.active_fault = fault_type
-            self.intensity = min(100.0, max(0.0, float(intensity)))
+            self.target_fault = fault_type
+            self.target_intensity = min(100.0, max(0.0, float(intensity)))
+
+    def _advance_fault_intensity(self, dt: float) -> None:
+        """Ramp fault level at 30 percentage points per second, including fault changes."""
+        switching_fault = self.active_fault != self.target_fault
+        ramping_down_for_switch = switching_fault and self.current_intensity > 0.0
+        if switching_fault:
+            if ramping_down_for_switch:
+                self.current_intensity = max(0.0, self.current_intensity - 30.0 * dt)
+            if self.current_intensity <= 0.001:
+                self.current_intensity = 0.0
+                self.active_fault = self.target_fault
+
+        if not ramping_down_for_switch and self.current_intensity < self.target_intensity:
+            self.current_intensity = min(self.target_intensity, self.current_intensity + 30.0 * dt)
+        elif not ramping_down_for_switch and self.current_intensity > self.target_intensity:
+            self.current_intensity = max(self.target_intensity, self.current_intensity - 30.0 * dt)
+        self.intensity = self.current_intensity
 
     def generate_raw_tick(self, timestamp: Optional[float] = None) -> Dict[str, Any]:
         t = timestamp if timestamp is not None else time.time()
@@ -53,7 +71,8 @@ class MachineSimulator:
         self.last_tick_time = t
         self.tick_count += 1
 
-        level = (self.intensity / 100.0) if self.active_fault else 0.0
+        self._advance_fault_intensity(dt)
+        level = (self.current_intensity / 100.0) if self.active_fault else 0.0
         m_factor = 0.62 if self.machine_id == 'PRN-01' else (1.15 if self.machine_id == 'CNC-02' else 1.0)
 
         # 1. Base Workload (%) with realistic sinusoidal variation + noise
@@ -62,26 +81,31 @@ class MachineSimulator:
         workload = max(10.0, min(100.0, workload))
         workload_ratio = workload / 100.0
 
-        # 2. Spindle RPM & Volatility (Belt slip causes severe RPM drop and volatility)
+        # 2. Spindle RPM & Volatility (Belt slip or cascading failure causes severe RPM drop and volatility)
         if self.machine_id == 'PRN-01':
             spindle_rpm = 0.0
-            rpm_volatility = 0.01 + (level * 0.38 if self.active_fault == 'belt_slip' else 0.0) + random.uniform(0, 0.005)
+            rpm_volatility = 0.01 + (level * 0.38 if self.active_fault in ('belt_slip', 'cascading_failure') else 0.0) + random.uniform(0, 0.005)
+        elif self.machine_id == 'PC-01':
+            nominal_rpm = 3100.0
+            rpm_drop = (level * 1400.0) if self.active_fault in ('belt_slip', 'cascading_failure') else (level * 120.0 if self.active_fault else 0.0)
+            spindle_rpm = nominal_rpm - (workload_ratio * 80.0) - rpm_drop + random.uniform(-15.0, 15.0)
+            rpm_volatility = 0.01 + (level * 0.35 if self.active_fault in ('belt_slip', 'cascading_failure') else 0.0) + random.uniform(0, 0.006)
         elif self.machine_id == 'CNC-02':
             nominal_rpm = 3400.0
-            rpm_drop = (level * 420.0) if self.active_fault == 'belt_slip' else (level * 70.0 if self.active_fault else 0.0)
+            rpm_drop = (level * 750.0) if self.active_fault in ('belt_slip', 'cascading_failure') else (level * 70.0 if self.active_fault else 0.0)
             spindle_rpm = nominal_rpm - (workload_ratio * 80.0) - rpm_drop + random.uniform(-15.0, 15.0)
-            rpm_volatility = 0.03 + (level * 0.38 if self.active_fault == 'belt_slip' else 0.0) + random.uniform(0, 0.01)
+            rpm_volatility = 0.03 + (level * 0.38 if self.active_fault in ('belt_slip', 'cascading_failure') else 0.0) + random.uniform(0, 0.01)
         else: # CNC-01
             nominal_rpm = 4950.0
-            rpm_drop = (level * 580.0) if self.active_fault == 'belt_slip' else (level * 90.0 if self.active_fault else 0.0)
+            rpm_drop = (level * 960.0) if self.active_fault in ('belt_slip', 'cascading_failure') else (level * 90.0 if self.active_fault else 0.0)
             spindle_rpm = nominal_rpm - (workload_ratio * 110.0) - rpm_drop + random.uniform(-20.0, 20.0)
-            rpm_volatility = 0.035 + (level * 0.42 if self.active_fault == 'belt_slip' else 0.0) + random.uniform(0, 0.015)
+            rpm_volatility = 0.035 + (level * 0.42 if self.active_fault in ('belt_slip', 'cascading_failure') else 0.0) + random.uniform(0, 0.015)
 
         # 3. Vibration RMS (mm/s) & Crest Factor (Bearing Spall & Drift cause vibration)
         base_vibe = 1.3 if self.machine_id == 'PRN-01' else 2.1
         vibe_workload_comp = (workload_ratio - 0.5) * 0.4
 
-        if self.active_fault == 'bearing_spall':
+        if self.active_fault in ('bearing_spall', 'cascading_failure'):
             vibe_fault = level * 7.2 * m_factor
             crest_base = 2.8 + level * 4.0 + random.uniform(-0.15, 0.2)
         elif self.active_fault == 'gradual_drift':
@@ -93,7 +117,7 @@ class MachineSimulator:
         elif self.active_fault == 'spindle_overheat':
             vibe_fault = level * 0.8 * m_factor
             crest_base = 2.4 + level * 0.4 + random.uniform(-0.1, 0.1)
-        else: # Normal (no fault)
+        else: # Normal or current_overload
             vibe_fault = 0.0
             crest_base = 2.4 + random.uniform(-0.1, 0.1)
 
@@ -104,9 +128,12 @@ class MachineSimulator:
         base_temp = 46.0 if self.machine_id == 'PRN-01' else 55.0
         thermal_workload = workload_ratio * 6.0
 
-        if self.active_fault == 'spindle_overheat':
+        if self.active_fault in ('spindle_overheat', 'cascading_failure'):
             target_temp = base_temp + thermal_workload + (level * 42.0)
             target_rate = 2.6 * level + random.uniform(-0.15, 0.2)
+        elif self.active_fault == 'current_overload':
+            target_temp = base_temp + thermal_workload + (level * 16.0)
+            target_rate = 1.2 * level + random.uniform(-0.1, 0.1)
         elif self.active_fault == 'bearing_spall':
             target_temp = base_temp + thermal_workload + (level * 8.0)
             target_rate = 0.35 * level + random.uniform(-0.05, 0.1)
@@ -121,11 +148,9 @@ class MachineSimulator:
             target_rate = random.uniform(-0.04, 0.04)
 
         # Realistic mechanical thermal dissipation (Newton's law of cooling)
-        # Cooling is naturally gradual: a machine doesn't drop 30°C instantly when shut down or self-healed
         cooling_speed = 0.18 if target_temp < self.last_temp else 0.45
         k_thermal = dt * cooling_speed
         temp_c = self.last_temp + (target_temp - self.last_temp) * min(1.0, k_thermal) + random.uniform(-0.15, 0.15)
-        # Dynamic dT/dt matches the actual temperature trajectory
         temp_rate = ((temp_c - self.last_temp) / dt) * 60.0
         temp_rate = max(-4.0, min(5.0, temp_rate))
         self.last_temp = temp_c
@@ -133,8 +158,11 @@ class MachineSimulator:
         # 5. Motor Current (Amperes)
         base_current = 2.4 if self.machine_id == 'PRN-01' else 5.2
         current_workload = workload_ratio * 2.0
-        if self.active_fault == 'belt_slip':
-            current_fault = level * 2.4 + math.sin(self.tick_count * 0.8) * 1.5 * level
+        if self.active_fault in ('current_overload', 'cascading_failure'):
+            # Inverter / Drive Overcurrent Trip limit surge
+            current_fault = level * (2.8 if self.machine_id == 'PRN-01' else 3.8)
+        elif self.active_fault == 'belt_slip':
+            current_fault = level * 2.2 + math.sin(self.tick_count * 0.08) * 0.6 * level
         elif self.active_fault == 'bearing_spall':
             current_fault = level * 2.0
         elif self.active_fault == 'gradual_drift':
@@ -144,7 +172,9 @@ class MachineSimulator:
         else:
             current_fault = 0.0
 
-        motor_current_a = max(0.5, base_current + current_workload + current_fault + random.uniform(-0.15, 0.15))
+        motor_current_a = max(0.5, base_current + current_workload + current_fault + random.uniform(-0.12, 0.12))
+
+        motor_current_a = max(0.5, base_current + current_workload + current_fault + random.uniform(-0.12, 0.12))
 
         # 6. Operating Hours & Service Age (PS 8 Requirement)
         elapsed_hours = (t - SIMULATOR_EPOCH) / 3600.0
@@ -197,34 +227,54 @@ class HostHardwareSimulator(MachineSimulator):
             self.boot_time = time.time() - 3600 * 4
 
     def get_real_temperature(self) -> float:
-        for hw in ["/sys/class/hwmon/hwmon4/temp1_input", "/sys/class/hwmon/hwmon3/temp1_input", "/sys/class/hwmon/hwmon1/temp1_input"]:
-            try:
-                if os.path.exists(hw):
-                    with open(hw, 'r') as f:
-                        return int(f.read().strip()) / 1000.0
-            except:
-                pass
+        import glob
+        # 1. Inspect sysfs hwmon driver names and labels for genuine CPU sensors
+        for hwdir in sorted(glob.glob('/sys/class/hwmon/hwmon*')):
+            name_file = os.path.join(hwdir, 'name')
+            if os.path.exists(name_file):
+                try:
+                    with open(name_file, 'r') as f:
+                        driver_name = f.read().strip().lower()
+                    if driver_name in ['coretemp', 'k10temp', 'zenpower', 'cpu_thermal']:
+                        # Search for explicit CPU Package / Tctl / Tdie label first
+                        for input_file in sorted(glob.glob(os.path.join(hwdir, 'temp*_input'))):
+                            label_file = input_file.replace('_input', '_label')
+                            if os.path.exists(label_file):
+                                with open(label_file, 'r') as lf:
+                                    lbl = lf.read().strip().lower()
+                                if lbl in ['package id 0', 'tctl', 'tdie']:
+                                    with open(input_file, 'r') as tf:
+                                        return int(tf.read().strip()) / 1000.0
+                        # Fallback to temp1_input under CPU driver
+                        t1 = os.path.join(hwdir, 'temp1_input')
+                        if os.path.exists(t1):
+                            with open(t1, 'r') as tf:
+                                return int(tf.read().strip()) / 1000.0
+                except:
+                    pass
+
+        # 2. Fallback via psutil with verified CPU driver keys
         try:
             temps = psutil.sensors_temperatures()
-            for key in ["coretemp", "acpitz", "nvme"]:
-                if key in temps and temps[key]:
-                    return float(temps[key][0].current)
+            for cpu_key in ['coretemp', 'k10temp', 'zenpower', 'cpu_thermal', 'acpitz']:
+                if cpu_key in temps and temps[cpu_key]:
+                    for item in temps[cpu_key]:
+                        if item.label and item.label.lower() in ['package id 0', 'tctl', 'tdie']:
+                            return float(item.current)
+                    return float(temps[cpu_key][0].current)
         except:
             pass
         return 50.0
 
     def set_fault(self, fault_type: Optional[str], intensity: float):
-        # PC-01 is a pure live physical hardware rig.
-        # Hardware sensors directly reflect real physical host workload and temperature.
-        # Chaos injection is reserved for simulated machine twins (CNC-01, CNC-02, PRN-01).
-        self.active_fault = None
-        self.intensity = 0.0
+        super().set_fault(fault_type, intensity)
 
     def generate_raw_tick(self, timestamp: Optional[float] = None) -> Dict[str, Any]:
         t = timestamp if timestamp is not None else time.time()
         dt = max(0.01, t - self.last_time)
         self.last_time = t
         self.tick_count += 1
+        self._advance_fault_intensity(dt)
 
         # 1. Read Raw Physical Sensors
         raw_temp = self.get_real_temperature()
@@ -244,28 +294,28 @@ class HostHardwareSimulator(MachineSimulator):
         except:
             bat_amps = 0.8
 
-        # 2. Industrial EMA Smoothing for Pure Physical Hardware Sensors
-        self.smoothed_workload = 0.90 * self.smoothed_workload + 0.10 * raw_workload
-        self.smoothed_freq = 0.90 * self.smoothed_freq + 0.10 * raw_freq
+        # 2. Industrial EMA Smoothing — tuned for ~15 Hz tick rate (65ms interval)
+        self.smoothed_workload = 0.97 * self.smoothed_workload + 0.03 * raw_workload
+        self.smoothed_freq = 0.97 * self.smoothed_freq + 0.03 * raw_freq
 
-        # 100% PURE PHYSICAL HARDWARE TEMPERATURE: Smooths instantaneous silicon diode spikes
-        # into natural mechanical thermal inertia (~3-4s rise) so technicians visually observe the Warning state
-        self.filtered_temp = 0.94 * self.filtered_temp + 0.06 * raw_temp
+        # Thermal inertia filter
+        self.filtered_temp = 0.987 * self.filtered_temp + 0.013 * raw_temp
 
         # 3. Rolling Window Rate-of-Change dT/dt (°C / min)
         self.temp_window.append((t, self.filtered_temp))
         oldest_t, oldest_temp = self.temp_window[0]
         dt_window = t - oldest_t
-        if dt_window >= 1.2:
+        if dt_window >= 3.0:
             temp_rate = ((self.filtered_temp - oldest_temp) / dt_window) * 60.0
         else:
             temp_rate = 0.0
         temp_rate = max(-1.2, min(2.5, temp_rate))
 
-        # 4. Spindle RPM mapped smoothly from CPU MHz (nominal ~3100 RPM)
-        base_rpm = 3100.0 + (self.smoothed_freq - 1200.0) * 0.7
+        # This host has no readable fan tach sensor. Keep a clearly simulated
+        # baseline and show fault overlay rather than mislabeling CPU frequency as RPM.
+        base_rpm = 3100.0
 
-        # 5. Spindle Current (A): nominal 4.5A, scaling with CPU workload and battery power
+        # 5. Current (A): nominal 4.5A
         motor_current = 3.6 + (self.smoothed_workload / 100.0) * 2.8 + (bat_amps * 0.3)
 
         # 6. Physical Micro-Jitter & Vibration
@@ -280,6 +330,20 @@ class HostHardwareSimulator(MachineSimulator):
         base_vibration = 1.15 + (self.smoothed_workload / 100.0) * 0.45 + jitter * 1.2
         crest_factor = 2.25 + (self.smoothed_workload / 100.0) * 0.45
 
+        # 7. Simulated fault perturbation overlay (allows testing all 4 graphs on PC-01)
+        level = self.intensity / 100.0
+        vibe_fault = level * 3.8 if self.active_fault in ('bearing_spall', 'cascading_failure') else 0.0
+        temp_fault = level * 36.0 if self.active_fault in ('spindle_overheat', 'cascading_failure') else (level * 14.0 if self.active_fault == 'current_overload' else 0.0)
+        curr_fault = level * 4.2 if self.active_fault in ('current_overload', 'cascading_failure') else 0.0
+        rpm_fault = level * 1900.0 if self.active_fault in ('belt_slip', 'cascading_failure') else 0.0
+        vol_fault = level * 0.38 if self.active_fault in ('belt_slip', 'cascading_failure') else 0.0
+
+        effective_temp = self.filtered_temp + temp_fault
+        effective_vibe = max(0.5, base_vibration + vibe_fault)
+        effective_current = motor_current + curr_fault
+        effective_rpm = max(400.0, base_rpm - rpm_fault)
+        effective_jitter = min(0.5, jitter + vol_fault)
+
         uptime_hrs = (time.time() - self.boot_time) / 3600.0
         service_age_hrs = 45.0 + uptime_hrs
 
@@ -287,13 +351,13 @@ class HostHardwareSimulator(MachineSimulator):
             "machine_id": self.machine_id,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime(t)) + f"{int((t % 1)*1000):03d}Z",
             "telemetry": {
-                "temperature_c": round(self.filtered_temp, 2),
-                "temp_rate_c_per_min": round(temp_rate, 2),
-                "vibration_rms_mm_s": round(base_vibration, 3),
-                "vibration_crest_factor": round(crest_factor, 2),
-                "motor_current_a": round(motor_current, 2),
-                "spindle_rpm": round(base_rpm, 1),
-                "rpm_volatility": round(jitter, 3),
+                "temperature_c": round(effective_temp, 2),
+                "temp_rate_c_per_min": round(temp_rate + (2.2 * level if self.active_fault in ('spindle_overheat', 'cascading_failure') else 0.0), 2),
+                "vibration_rms_mm_s": round(effective_vibe, 3),
+                "vibration_crest_factor": round(crest_factor + (level * 2.5 if self.active_fault in ('bearing_spall', 'cascading_failure') else 0.0), 2),
+                "motor_current_a": round(effective_current, 2),
+                "spindle_rpm": round(effective_rpm, 1),
+                "rpm_volatility": round(effective_jitter, 3),
                 "workload_pct": round(self.smoothed_workload, 1),
                 "operating_hours": round(uptime_hrs, 2),
                 "service_age_hrs": round(service_age_hrs, 2)

@@ -41,11 +41,14 @@ body[data-s="CRITICAL"]::before, body[data-s="CRITICAL"] { --sc: #D32F2F; }
 
 /* ── App Grid ── */
 .app {
-  position: fixed;
-  inset: 0 0 0 14px;
+  position: relative;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+  margin-left: 14px;
   display: grid;
   grid-template-columns: 304px minmax(0, 1fr) 316px;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr;
   grid-template-areas:
     "top top top"
     "fleet fleet fleet"
@@ -153,10 +156,13 @@ button.chip:hover { text-decoration-color: var(--ink); }
 
 /* ── Columns ── */
 .col {
+  height: 100%;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--side);
+  display: flex;
+  flex-direction: column;
   scrollbar-width: thin;
   scrollbar-color: var(--rule) transparent;
 }
@@ -165,44 +171,77 @@ button.chip:hover { text-decoration-color: var(--ink); }
 
 /* ── Block (reusable card inside columns) ── */
 .blk {
-  padding: 11px 18px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
-.blk h3 { font-size: 14.5px; font-weight: 700; }
-.lab { font-size: 13.5px; color: var(--mut); }
-.sub { font-size: 11.5px; color: var(--mut); display: block; }
+.blk h3 { font-size: 13.5px; font-weight: 700; }
+.lab { font-size: 12.5px; color: var(--mut); }
+.sub { font-size: 11px; color: var(--mut); display: block; }
 
 /* ── Health Score ── */
-.hd { display: flex; gap: 16px; align-items: flex-start; }
+.hd { display: flex; gap: 12px; align-items: flex-start; }
 .score {
   font-family: var(--fc);
-  font-size: 88px;
+  font-size: 72px;
   font-weight: 700;
   line-height: .82;
   color: var(--sc);
   margin-top: 2px;
 }
-.st { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.st { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .pill {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-family: var(--fc);
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--ink);
 }
-.pill::before { content: ""; width: 12px; height: 12px; background: var(--sc); }
-.dx { font-size: 15px; line-height: 1.35; }
-.zone { font-size: 13.5px; color: var(--mut); }
+.pill::before { content: ""; width: 10px; height: 10px; background: var(--sc); }
+.dx { font-size: 13.5px; line-height: 1.3; }
+.zone { font-size: 12.5px; color: var(--mut); }
 
-/* ── RUL ── */
-.rul { border-top: 1px solid var(--rule); padding-top: 12px; }
-.rul b { display: block; font-family: var(--fc); font-size: 34px; font-weight: 700; line-height: 1.1; }
-.rul span { font-size: 14px; color: var(--mut); }
+/* ── RUL & Vertical Operational Metrics ── */
+.rul { border-top: 1px solid var(--rule); padding-top: 8px; }
+.rul b { display: block; font-family: var(--fc); font-size: 28px; font-weight: 700; line-height: 1.1; }
+.rul span { font-size: 13px; color: var(--mut); }
+
+.v-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--rule);
+}
+.v-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v-metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12.5px;
+  color: var(--mut);
+}
+.v-metric-row b {
+  font-family: var(--fc);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.v-metric-foot {
+  font-size: 11px;
+  color: var(--mut);
+  padding-top: 3px;
+  border-top: 1px solid rgba(22, 25, 28, 0.06);
+}
 
 /* ── AI Scores + Sparklines ── */
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -236,8 +275,18 @@ button.chip:hover { text-decoration-color: var(--ink); }
 .xr .mt { grid-column: 1/3; margin-top: 0; }
 
 /* ── Center: 3D + Charts + Metrics ── */
-.mid { grid-area: mid; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.mid .stage { flex: 1; min-height: 240px; }
+.mid {
+  grid-area: mid;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.mid .stage {
+  flex: 1 1 0%;
+  min-height: 220px;
+}
 .stage { position: relative; overflow: hidden; }
 #gl { position: absolute; inset: 0; cursor: grab; }
 #gl:active { cursor: grabbing; }
@@ -249,7 +298,7 @@ button.chip:hover { text-decoration-color: var(--ink); }
   left: 0; right: 0; top: 0;
   transform: translateY(-100%);
   transition: transform .3s;
-  padding: 9px 20px;
+  padding: 8px 18px;
   background: #D32F2F;
   color: #fff;
   font-weight: 600;
@@ -261,13 +310,14 @@ button.chip:hover { text-decoration-color: var(--ink); }
 
 /* ── Telemetry Charts Section (Drafting Paper SCADA Layout) ── */
 .charts {
+  flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border-top: 1px solid var(--ink);
   background: var(--side);
 }
 .ch {
-  padding: 10px 14px 8px;
+  padding: 8px 12px 6px;
   border-right: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
@@ -281,8 +331,8 @@ button.chip:hover { text-decoration-color: var(--ink); }
 .ch-head {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: 2px;
+  margin-bottom: 4px;
 }
 .ch-top {
   display: flex;
@@ -329,30 +379,30 @@ button.chip:hover { text-decoration-color: var(--ink); }
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
 }
 .ch-main {
   font-family: var(--fc);
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1;
 }
 .ch-unit {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--mut);
   margin-left: 2px;
 }
 .ch-sub {
   font-family: var(--f);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--mut);
   white-space: nowrap;
 }
 .ch-sub b {
   font-family: var(--fc);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink);
   margin-left: 3px;
@@ -361,9 +411,9 @@ button.chip:hover { text-decoration-color: var(--ink); }
 /* Plot Area (Y-Axis + Canvas) */
 .ch-body {
   display: grid;
-  grid-template-columns: 38px 1fr;
-  gap: 8px;
-  height: clamp(120px, 17vh, 190px);
+  grid-template-columns: 36px 1fr;
+  gap: 6px;
+  height: clamp(140px, 19vh, 205px);
   position: relative;
 }
 .ch-yaxis {
@@ -371,11 +421,11 @@ button.chip:hover { text-decoration-color: var(--ink); }
   flex-direction: column;
   justify-content: space-between;
   font-family: var(--fc);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: #64748B;
   text-align: right;
-  padding: 4px 2px 4px 0;
+  padding: 2px 2px 2px 0;
   user-select: none;
 }
 .ch-plot {
@@ -392,19 +442,33 @@ button.chip:hover { text-decoration-color: var(--ink); }
   height: 100%;
   display: block;
 }
+.ch-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 20px;
+  margin-top: 5px;
+  color: var(--mut);
+  font-size: 11px;
+}
+.ch-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ch-legend i { width: 16px; height: 3px; display: inline-block; border-radius: 2px; }
+.ch-legend small { color: #737980; font-size: 10.5px; }
 
-/* Threshold Labels (Pure Typography, No Box) */
+/* Threshold Labels (Pure Clean Typography, No Box Cutout) */
 .th-label {
   font-family: var(--fc);
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  padding: 0 4px;
+  letter-spacing: 0.5px;
+  padding: 0 4px 2px 0;
   pointer-events: none;
   z-index: 2;
   white-space: nowrap;
   background: transparent;
+  border: none;
   line-height: 1;
 }
 
@@ -435,18 +499,80 @@ button.chip:hover { text-decoration-color: var(--ink); }
 /* ── Chaos Injector ── */
 .fa .fs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .fb {
-  border: 1px solid var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--rule);
   background: transparent;
   color: var(--ink);
   border-radius: 3px;
-  padding: 6px 13px;
+  padding: 6px 8px;
   font: inherit;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
 }
-.fb:hover { background: rgba(22,25,28,.07); }
-.fb.on { background: var(--ink); color: #fff; }
+.fb:hover { background: rgba(22,25,28,.05); border-color: var(--ink); }
+.fb.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 .fb.rs { border-color: var(--ink); text-decoration: none; }
+.fb-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(22, 25, 28, 0.08);
+  color: var(--ink);
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.fb.on .fb-tag {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+.fb.fb-all {
+  grid-column: 1 / -1;
+  justify-content: center;
+  border-color: #D32F2F;
+  color: #D32F2F;
+  font-weight: 700;
+  background: rgba(211, 47, 47, 0.03);
+}
+.fb.fb-all:hover {
+  background: rgba(211, 47, 47, 0.08);
+}
+.fb.fb-all.on {
+  background: #D32F2F;
+  color: #fff;
+  border-color: #D32F2F;
+}
+.fb.fb-all .fb-tag {
+  background: rgba(211, 47, 47, 0.12);
+  color: #D32F2F;
+}
+.fb.fb-all.on .fb-tag {
+  background: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+.ch-trig-btn {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--rule);
+  background: rgba(22, 25, 28, 0.04);
+  color: var(--mut);
+  cursor: pointer;
+  letter-spacing: 0.2px;
+  transition: all 0.15s ease;
+}
+.ch-trig-btn:hover {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
 .sl { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 200px; }
 .sl .num { font-family: var(--fc); font-size: 22px; font-weight: 600; }
 input[type=range] { flex: 1; accent-color: var(--ink); height: 26px; }
@@ -582,6 +708,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outli
   body { overflow: auto; }
   .app {
     position: static;
+    min-height: 100%;
     margin-left: 14px;
     display: flex;
     flex-direction: column;

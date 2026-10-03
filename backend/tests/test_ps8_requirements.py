@@ -3,13 +3,16 @@ import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
+from unittest.mock import patch
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 import db
 import server
+from simulator import HostHardwareSimulator, MachineSimulator
 from pydantic import ValidationError
 
 
@@ -19,13 +22,14 @@ class PS8RequirementTests(unittest.TestCase):
         cls.temp_dir = tempfile.TemporaryDirectory(prefix="machinexai-tests-")
         db.DB_PATH = os.path.join(cls.temp_dir.name, "ps8.sqlite3")
         db.init_db()
+        server.get_ai_engine()
 
     @classmethod
     def tearDownClass(cls):
         cls.temp_dir.cleanup()
 
     def test_model_includes_operating_hours_and_trend_output(self):
-        for model in server.ai_engine.models.values():
+        for model in server.get_ai_engine().models.values():
             self.assertIn("operating_hours", model["feature_names"])
             self.assertEqual(len(model["feature_names"]), len(model["train_mean"]))
             age_index = model["feature_names"].index("operating_hours")
@@ -37,7 +41,7 @@ class PS8RequirementTests(unittest.TestCase):
             self.assertGreater(model["diagnosis_validation"]["accuracy"], 0.8)
 
         raw = server.fleet.get_machine("CNC-01").generate_raw_tick()
-        tick = server.ai_engine.evaluate_tick(raw)
+        tick = server.get_ai_engine().evaluate_tick(raw)
         self.assertIn("operating_hours", tick["telemetry"])
         self.assertGreaterEqual(tick["prognostics"]["degradation_trend"], 0)
         self.assertLessEqual(tick["prognostics"]["degradation_trend"], 1)
@@ -45,11 +49,11 @@ class PS8RequirementTests(unittest.TestCase):
     def test_fault_injection_moves_risk_and_reports_a_diagnosis(self):
         sim = server.fleet.get_machine("CNC-01")
         sim.set_fault(None, 0)
-        normal = [server.ai_engine.evaluate_tick(sim.generate_raw_tick()) for _ in range(20)]
+        normal = [server.get_ai_engine().evaluate_tick(sim.generate_raw_tick()) for _ in range(20)]
         baseline_risk = sum(t["ai"]["failure_probability"] for t in normal) / len(normal)
 
         sim.set_fault("bearing_spall", 100)
-        degraded = [server.ai_engine.evaluate_tick(sim.generate_raw_tick()) for _ in range(40)]
+        degraded = [server.get_ai_engine().evaluate_tick(sim.generate_raw_tick()) for _ in range(40)]
         latest = degraded[-1]
         self.assertGreater(latest["ai"]["failure_probability"], baseline_risk)
         self.assertNotEqual(latest["health"]["status"], "NOMINAL")
@@ -57,12 +61,54 @@ class PS8RequirementTests(unittest.TestCase):
         self.assertIsNotNone(latest["prognostics"]["rul_hours"])
         sim.set_fault(None, 0)
 
+    def test_fault_intensity_ramps_and_type_changes_ramp_down_first(self):
+        sim = MachineSimulator("CNC-01", "Test CNC", "Spindle Lathe", 100, 10)
+        start = sim.last_tick_time
+        sim.set_fault("spindle_overheat", 90)
+
+        first = sim.generate_raw_tick(timestamp=start + 1.0)
+        self.assertEqual(first["chaos"]["intensity"], 30)
+        self.assertEqual(first["chaos"]["fault_type"], "spindle_overheat")
+
+        sim.generate_raw_tick(timestamp=start + 3.0)
+        self.assertEqual(sim.intensity, 90)
+        sim.set_fault("bearing_spall", 90)
+        transition = sim.generate_raw_tick(timestamp=start + 4.0)
+        self.assertEqual(transition["chaos"]["intensity"], 60)
+        self.assertEqual(transition["chaos"]["fault_type"], "spindle_overheat")
+
+        sim.generate_raw_tick(timestamp=start + 6.0)
+        changed = sim.generate_raw_tick(timestamp=start + 7.0)
+        self.assertEqual(changed["chaos"]["fault_type"], "bearing_spall")
+        self.assertEqual(changed["chaos"]["intensity"], 30)
+
+    def test_pc_host_fault_overlay_ramps_and_crosses_graph_critical_limits(self):
+        host = HostHardwareSimulator()
+        host.get_real_temperature = lambda: 55.0
+        start = host.last_time
+        stable_stats = SimpleNamespace(ctx_switches=host.ctx_switches_prev)
+        stable_freq = SimpleNamespace(current=1200.0)
+        with patch("simulator.psutil.cpu_percent", return_value=30.0), \
+             patch("simulator.psutil.cpu_freq", return_value=stable_freq), \
+             patch("simulator.psutil.cpu_stats", return_value=stable_stats):
+            host.set_fault("belt_slip", 80)
+            fan_tick = host.generate_raw_tick(timestamp=start + 3.0)
+            self.assertEqual(fan_tick["chaos"]["intensity"], 80)
+            self.assertLess(fan_tick["telemetry"]["spindle_rpm"], 1800)
+
+            host.set_fault("current_overload", 85)
+            # Fault-type changes ramp the previous effect down before the next starts.
+            host.generate_raw_tick(timestamp=start + 6.0)
+            current_tick = host.generate_raw_tick(timestamp=start + 9.0)
+            self.assertEqual(current_tick["chaos"]["fault_type"], "current_overload")
+            self.assertGreater(current_tick["telemetry"]["motor_current_a"], 7.5)
+
     def test_printer_can_reach_critical_under_sustained_thermal_runaway(self):
         sim = server.fleet.get_machine("PRN-01")
         sim.set_fault("spindle_overheat", 100)
         tick = None
         for index in range(450):
-            tick = server.ai_engine.evaluate_tick(
+            tick = server.get_ai_engine().evaluate_tick(
                 sim.generate_raw_tick(timestamp=sim.last_tick_time + 0.01)
             )
             if tick["health"]["status"] == "CRITICAL":
@@ -72,9 +118,9 @@ class PS8RequirementTests(unittest.TestCase):
         self.assertEqual(tick["health"]["status"], "CRITICAL")
         self.assertIn("Thermal", tick["diagnostics"]["probable_fault"])
 
-    def test_chaos_inputs_reject_unsupported_machine_and_out_of_range_values(self):
-        with self.assertRaises(ValidationError):
-            server.ChaosRequest(machine_id="PC-01", fault_type="bearing_spall", intensity=50)
+    def test_chaos_inputs_accept_pc_and_reject_out_of_range_values(self):
+        pc_request = server.ChaosRequest(machine_id="PC-01", fault_type="bearing_spall", intensity=50)
+        self.assertEqual(pc_request.machine_id, "PC-01")
         with self.assertRaises(ValidationError):
             server.ChaosRequest(machine_id="CNC-01", fault_type="bearing_spall", intensity=101)
         with self.assertRaises(ValidationError):
@@ -108,9 +154,19 @@ class PS8RequirementTests(unittest.TestCase):
             "/ws/telemetry/live",
         }.issubset(routes))
 
+    def test_cors_is_restricted_to_configured_local_frontend_origins(self):
+        middleware = next(
+            item for item in server.app.user_middleware
+            if item.cls.__name__ == "CORSMiddleware"
+        )
+        options = middleware.kwargs
+        self.assertTrue(options["allow_origins"])
+        self.assertNotIn("*", options["allow_origins"])
+        self.assertFalse(options["allow_credentials"])
+
     def test_history_endpoint_returns_persisted_ticks_when_ring_is_empty(self):
         raw = server.fleet.get_machine("CNC-02").generate_raw_tick()
-        tick = server.ai_engine.evaluate_tick(raw)
+        tick = server.get_ai_engine().evaluate_tick(raw)
         db.log_telemetry_batch([tick])
         server.ring_buffers["CNC-02"].clear()
 

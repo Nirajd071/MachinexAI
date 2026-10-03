@@ -32,7 +32,8 @@ export function ActionPanel({ machineId, status, critical, mock, tick, onSignOff
       a.download = `WO_${machineId}_${Date.now()}.pdf`;
       a.click();
       notify('Work order PDF downloaded.');
-    } catch {
+    } catch (err) {
+      console.error('[ActionPanel] Work-order download failed:', err);
       notify('Work-order download failed.');
     }
   }
@@ -48,7 +49,8 @@ export function ActionPanel({ machineId, status, critical, mock, tick, onSignOff
       const result = await r.json() as { status?: string; preview_url?: string; is_test_account?: boolean };
       if (result.status !== 'success') throw new Error('Alert delivery is not configured.');
       notify(result.is_test_account ? 'Test alert sent. Check the gateway logs for its preview URL.' : 'Admin emergency email dispatched.');
-    } catch {
+    } catch (err) {
+      console.error('[ActionPanel] Admin alert failed:', err);
       notify('Admin alert failed.');
     }
   }

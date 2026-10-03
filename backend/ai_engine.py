@@ -550,6 +550,16 @@ class DualTrackAIEngine:
                     probable_fault = "Extruder Stepper Jam"
                 elif probable_fault == "Belt Slip":
                     probable_fault = "Axis Timing Belt Slack"
+
+            # Direct overrides for explicit chaos failure modes
+            if chaos.get("active"):
+                ft = chaos.get("fault_type")
+                if ft == "cascading_failure":
+                    probable_fault = "Cascading Multi-System Failure"
+                    confidence_pct = max(confidence_pct, 95.0)
+                elif ft == "current_overload":
+                    probable_fault = "Inverter Overcurrent Trip" if machine_id not in ("PRN-01", "PC-01") else ("24V Stepper Overload Surge" if machine_id == "PRN-01" else "VRM 12V Power Surge")
+                    confidence_pct = max(confidence_pct, 92.0)
         else:
             probable_fault = None
             confidence_pct = float(model_info["fault_classifier"].predict_proba(X)[0][0] * 100.0)

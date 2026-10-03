@@ -77,7 +77,7 @@ function Home() {
         preset={preset} activeFault={tick?.chaos?.fault_type ?? null} />
       <HealthGauge tick={tick} />
       <AiScores history={history} tick={tick} />
-      <RulCard tick={tick} />
+      <RulCard tick={tick} history={history} mockMode={mockMode} />
     </aside>
 
     {/* CENTER */}
@@ -87,15 +87,11 @@ function Home() {
         <AlertBanner critical={critical} warning={warning} fault={tick?.diagnostics?.probable_fault ?? null} />
         <div className="hint">Drag to rotate, scroll to zoom</div>
       </main>
-      <TelemetryCharts history={history} tick={tick} />
-      <div className="metrics">
-        <div>Workload ratio<b className="num">{(tl?.workload_pct ?? 0).toFixed(1)}%</b>
-          <div className="mt"><i style={{ background: 'var(--ink)', width: `${tl?.workload_pct ?? 0}%` }} /></div></div>
-        <div>Operating hours<b className="num">{(tl?.operating_hours ?? 0).toFixed(1)} hrs</b></div>
-        <div>Service age<b className="num">{Math.round(tl?.service_age_hrs ?? 0)} hrs</b></div>
-        <div>RPM volatility<b className="num">{cv.toFixed(3)}</b></div>
-        <div>{mockMode ? 'Simulated telemetry gateway' : `Gateway localhost:8000`}, {buf.length} samples</div>
-      </div>
+      <TelemetryCharts
+        history={history}
+        tick={tick}
+        onTriggerFault={(f, val) => preset(f, val ?? 85)}
+      />
     </div>
 
     {/* RIGHT COLUMN */}
@@ -111,7 +107,7 @@ function Home() {
         </div>
       </section>
       <XaiPanel tick={tick} />
-      <MaintenanceTable tick={tick} />
+      <MaintenanceTable tick={tick} maintenance={maintenance} />
       <ActionPanel machineId={selected?.machine_id ?? selectedId} status={status} critical={critical}
         mock={mockMode} tick={tick} onSignOff={signOff} onNotify={notify} />
     </aside>

@@ -1,5 +1,5 @@
 export type HealthStatus = 'NOMINAL' | 'WARNING' | 'CRITICAL';
-export type FaultType = 'bearing_spall' | 'spindle_overheat' | 'belt_slip' | 'gradual_drift';
+export type FaultType = 'bearing_spall' | 'spindle_overheat' | 'belt_slip' | 'gradual_drift' | 'current_overload' | 'cascading_failure';
 export type Machine = { machine_id: string; name: string; type: string; operating_hours: number; service_age_hrs: number };
 export type Contributor = { sensor: string; weight: number };
 export type Tick = {

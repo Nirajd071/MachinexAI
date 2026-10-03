@@ -16,18 +16,44 @@ def heavy_worker(stop_event):
             x = math.sin(x) * math.cos(x) + math.tan(0.0001)
 
 def get_pure_physical_temp():
-    paths = [
-        "/sys/class/hwmon/hwmon4/temp1_input",  # Coretemp Package id 0
-        "/sys/class/hwmon/hwmon1/temp1_input",  # ACPI
-        "/sys/class/hwmon/hwmon3/temp1_input"
-    ]
-    for path in paths:
-        try:
-            if os.path.exists(path):
-                with open(path, 'r') as f:
-                    return int(f.read().strip()) / 1000.0, path
-        except:
-            pass
+    import glob
+    # 1. Inspect sysfs hwmon driver names and labels for genuine CPU sensors
+    for hwdir in sorted(glob.glob('/sys/class/hwmon/hwmon*')):
+        name_file = os.path.join(hwdir, 'name')
+        if os.path.exists(name_file):
+            try:
+                with open(name_file, 'r') as f:
+                    driver_name = f.read().strip().lower()
+                if driver_name in ['coretemp', 'k10temp', 'zenpower', 'cpu_thermal']:
+                    # Search for explicit CPU Package / Tctl / Tdie label first
+                    for input_file in sorted(glob.glob(os.path.join(hwdir, 'temp*_input'))):
+                        label_file = input_file.replace('_input', '_label')
+                        label_str = ""
+                        if os.path.exists(label_file):
+                            with open(label_file, 'r') as lf:
+                                label_str = lf.read().strip()
+                        if label_str.lower() in ['package id 0', 'tctl', 'tdie']:
+                            with open(input_file, 'r') as tf:
+                                return int(tf.read().strip()) / 1000.0, f"{driver_name} ({label_str})"
+                    # Fallback under CPU driver
+                    t1 = os.path.join(hwdir, 'temp1_input')
+                    if os.path.exists(t1):
+                        with open(t1, 'r') as tf:
+                            return int(tf.read().strip()) / 1000.0, f"{driver_name} (temp1)"
+            except:
+                pass
+
+    # 2. Fallback via psutil
+    try:
+        temps = psutil.sensors_temperatures()
+        for cpu_key in ['coretemp', 'k10temp', 'zenpower', 'cpu_thermal', 'acpitz']:
+            if cpu_key in temps and temps[cpu_key]:
+                for item in temps[cpu_key]:
+                    if item.label and item.label.lower() in ['package id 0', 'tctl', 'tdie']:
+                        return float(item.current), f"{cpu_key} ({item.label})"
+                return float(temps[cpu_key][0].current), f"{cpu_key} ({temps[cpu_key][0].label or 'temp1'})"
+    except:
+        pass
     return 47.0, "unknown"
 
 def is_on_ac_power():

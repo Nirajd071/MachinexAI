@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getHistory, getMachines, getMaintenance, injectChaos, signOffWorkOrder, USE_MOCK } from '../api';
-import { mockTick, seedTicks } from '../mockEngine';
-import { MACHINE_SEEDS } from '../types';
+import { advanceMockFault, mockTick, seedTicks } from '../mockEngine';
+import { MACHINE_SEEDS as MACHINE_FALLBACK } from '../types';
 import type { FaultType, Machine, Maintenance, Tick } from '../types';
 import { useTelemetrySocket } from './useTelemetrySocket';
 import { toast } from 'sonner';
 const MAX = 1200;
 export function useCockpit() {
-  const [machines, setMachines] = useState<Machine[]>(MACHINE_SEEDS);
+  const [machines, setMachines] = useState<Machine[]>(MACHINE_FALLBACK);
   const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get('machine') || 'CNC-01');
   const [buffers, setBuffers] = useState<Record<string, Tick[]>>({});
   const [maintenance, setMaintenance] = useState<Maintenance[]>([]);
@@ -80,7 +80,8 @@ export function useCockpit() {
     const id = window.setInterval(() => {
       machines.forEach(machine => {
         const setting = faultRef.current[machine.machine_id] ?? { fault: null, intensity: 0 };
-        handleTick(mockTick(machine, setting.fault, setting.intensity));
+        const effective = advanceMockFault(machine.machine_id, setting.fault, setting.intensity);
+        handleTick(mockTick(machine, effective.fault, effective.intensity));
       });
     }, 50);
     return () => window.clearInterval(id);
@@ -151,4 +152,3 @@ export function useCockpit() {
 
   return { machines, selectedId, chooseMachine, selected, tick, history: renderedHistory, buffers, maintenance, mockMode, setMockMode, socket, fault, setFault, intensity, setSlider, preset, latency, loadError, retry: () => setReloadKey(key => key + 1), signOff };
 }
-import { MACHINE_SEEDS as MACHINE_FALLBACK } from '../types';

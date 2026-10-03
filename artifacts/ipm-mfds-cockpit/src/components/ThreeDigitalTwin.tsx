@@ -571,7 +571,7 @@ export const ThreeDigitalTwin = memo(function ThreeDigitalTwin({ machineId, tick
 
     // Camera + interaction
     let el = 0.36;
-    let dist = 13.6;
+    let dist = 11.2;
     let drag = false;
     let px = 0;
     let py = 0;
@@ -675,9 +675,9 @@ export const ThreeDigitalTwin = memo(function ThreeDigitalTwin({ machineId, tick
 
       if (autoRotateRef.current && !drag) root.rotation.y += dt * 0.18;
 
-      // TargetY = 1.60 shifts the 3D twin upward to occupy upper stage space without clipping the gantry
-      const targetY = 1.60;
-      const cd = dist * Math.max(1, 1.40 / cam.aspect);
+      // TargetY = 1.35 centers the 3D twin neatly in the reduced-height viewport
+      const targetY = 1.35;
+      const cd = dist * Math.max(1, 1.25 / cam.aspect);
       cam.position.set(0, targetY + Math.sin(el) * cd, Math.cos(el) * cd);
       cam.lookAt(0, targetY, 0);
 
