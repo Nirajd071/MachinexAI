@@ -428,8 +428,9 @@ Smart Manufacturing Laboratory
   } catch {}
 
   // Send SMS via phone email gateway if configured
-  let smsInfo = { messageId: 'carrier-gateway-simulated' };
-  if (admin_phone_email && !admin_phone_email.includes('5550198234')) {
+  let smsInfo = null;
+  let smsStatus = 'not_configured';
+  if (admin_phone_email) {
     try {
       smsInfo = await transporter.sendMail({
         from: senderAddress,
@@ -437,8 +438,10 @@ Smart Manufacturing Laboratory
         subject: `ALERT ${machine_id}`,
         text: smsText
       });
-    } catch (e) {
-      // Safe catch
+      smsStatus = 'sent';
+    } catch (error) {
+      smsStatus = 'failed';
+      console.error(`[SMS gateway error] ${error.message}`);
     }
   }
 
@@ -454,8 +457,9 @@ Smart Manufacturing Laboratory
     },
     message_ids: {
       email: emailInfo.messageId,
-      sms: smsInfo.messageId
+      sms: smsInfo?.messageId || null
     },
+    channels: { email: 'sent', sms: smsStatus },
     has_pdf_attachment: attachments.length > 0,
     preview_url: previewUrl,
     is_test_account: isEthereal

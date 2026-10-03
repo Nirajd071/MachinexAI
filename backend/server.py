@@ -30,7 +30,8 @@ from simulator import FleetSimulator
 from ai_engine import DualTrackAIEngine
 from db import (
     init_db, log_telemetry_batch, get_machine_list,
-    get_maintenance_history, log_work_order, sign_off_work_order, get_work_orders
+    get_maintenance_history, get_recent_history, log_work_order,
+    sign_off_work_order, get_work_orders
 )
 from pdf_generator import generate_work_order_pdf
 
@@ -52,6 +53,7 @@ latest_ticks: Dict[str, Dict[str, Any]] = {}
 
 # State tracking for auto-alerting
 machine_last_status: Dict[str, str] = {}
+machine_last_failure_risk: Dict[str, float] = {}
 machine_last_alert_time: Dict[str, float] = {}
 
 # Active WebSocket connections
@@ -67,6 +69,21 @@ class SignOffRequest(BaseModel):
     technician: str = "Lead Technician"
     notes: Optional[str] = None
     part_replaced: Optional[str] = None
+
+
+def get_auto_alert_reason(
+    current_status: str,
+    previous_status: str,
+    current_risk: float,
+    previous_risk: float,
+) -> Optional[str]:
+    if current_status == "CRITICAL" and previous_status != "CRITICAL":
+        return "critical state entered"
+    if current_risk >= 0.35 and (
+        previous_risk < 0.35 or current_risk - previous_risk >= 0.15
+    ):
+        return "failure risk increased"
+    return None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -114,16 +131,23 @@ async def background_telemetry_loop():
                 raw = sim.generate_raw_tick(timestamp=t_now)
                 evaluated = ai_engine.evaluate_tick(raw)
 
-                # Check for state transition into CRITICAL (Edge-Triggered Auto-Alert)
+                # Alert when the machine enters Critical or crosses / sharply
+                # increases above the elevated-risk threshold.
                 curr_status = evaluated.get("health", {}).get("status", "NOMINAL")
                 prev_status = machine_last_status.get(m_id, "NOMINAL")
+                curr_risk = float(evaluated.get("ai", {}).get("failure_probability", 0.0))
+                prev_risk = machine_last_failure_risk.get(m_id, 0.0)
                 machine_last_status[m_id] = curr_status
+                machine_last_failure_risk[m_id] = curr_risk
 
-                if curr_status == "CRITICAL" and prev_status != "CRITICAL":
+                alert_reason = get_auto_alert_reason(
+                    curr_status, prev_status, curr_risk, prev_risk
+                )
+                if alert_reason:
                     now_ts = time.time()
                     if now_ts - machine_last_alert_time.get(m_id, 0) > 60:
                         machine_last_alert_time[m_id] = now_ts
-                        print(f"[AUTO-ALERT] Machine {m_id} entered CRITICAL state! Auto-dispatching Nodemailer...")
+                        print(f"[AUTO-ALERT] {m_id}: {alert_reason} (risk {curr_risk:.0%}, {curr_status}); dispatching alert")
                         asyncio.create_task(dispatch_emergency_alert(m_id, evaluated))
 
                 # Update Ring Buffer
@@ -173,16 +197,37 @@ def get_machines():
     """Returns the fleet of machines with operating hours and metadata."""
     return get_machine_list()
 
+
+@app.get("/model/metrics")
+def get_model_metrics():
+    """Expose held-out synthetic validation results for demo transparency."""
+    return {
+        machine_id: {
+            "failure_risk": model["failure_validation"],
+            "fault_diagnosis": model["diagnosis_validation"],
+        }
+        for machine_id, model in ai_engine.models.items()
+    }
+
 @app.get("/history")
-def get_history(machine_id: str = Query(..., description="Machine ID, e.g. CNC-01"), limit: int = 1000):
+def get_history(
+    machine_id: str = Query(..., description="Machine ID, e.g. CNC-01"),
+    limit: int = Query(1000, ge=1, le=1000),
+):
     """
-    Returns last N ticks from in-memory ring buffer for instant zero-latency UI hydration.
+    Return durable telemetry plus newer in-memory frames for UI hydration.
     """
-    buf = ring_buffers.get(machine_id)
-    if not buf:
-        return []
-    items = list(buf)
-    return items[-limit:]
+    persisted = get_recent_history(machine_id, limit)
+    buffered = list(ring_buffers.get(machine_id, ()))
+    if not persisted:
+        return buffered[-limit:]
+
+    # Merge the durable history with newer in-memory frames and deduplicate by
+    # timestamp. This keeps hydration useful after restarts without dropping
+    # the most recent ticks that have not reached the SQLite batch writer yet.
+    by_timestamp = {tick["timestamp"]: tick for tick in persisted}
+    by_timestamp.update({tick["timestamp"]: tick for tick in buffered})
+    return sorted(by_timestamp.values(), key=lambda tick: tick["timestamp"])[-limit:]
 
 @app.get("/maintenance")
 def get_maintenance(machine_id: str = Query(..., description="Machine ID, e.g. CNC-01")):

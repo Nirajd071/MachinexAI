@@ -9,6 +9,8 @@ Implements:
 
 import numpy as np
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
+from sklearn.metrics import accuracy_score, brier_score_loss, precision_score, recall_score
+from sklearn.model_selection import train_test_split
 from typing import Dict, Any, List, Tuple, Optional
 from collections import deque
 
@@ -20,7 +22,8 @@ FEATURE_NAMES = [
     "motor_current_a",
     "spindle_rpm",
     "rpm_volatility",
-    "workload_pct"
+    "workload_pct",
+    "operating_hours"
 ]
 
 FEATURE_NAMES_NO_SPINDLE = [
@@ -30,7 +33,8 @@ FEATURE_NAMES_NO_SPINDLE = [
     "vibration_crest_factor",
     "motor_current_a",
     "rpm_volatility",
-    "workload_pct"
+    "workload_pct",
+    "operating_hours"
 ]
 
 FAULT_CLASSES = [
@@ -46,24 +50,28 @@ MACHINE_PROFILES = {
         "profile": "cnc_standard",
         "rpm": 4950.0,
         "current": 5.2,
+        "operating_hours": 1248.5,
         "has_spindle": True
     },
     "CNC-02": {
         "profile": "cnc_heavy",
         "rpm": 3400.0,
         "current": 5.2,
+        "operating_hours": 2816.2,
         "has_spindle": True
     },
     "PRN-01": {
         "profile": "printer_3d",
         "rpm": 0.0,
         "current": 2.4,
+        "operating_hours": 684.7,
         "has_spindle": False
     },
     "PC-01": {
         "profile": "host_hardware",
         "rpm": 3100.0,
         "current": 4.5,
+        "operating_hours": 312.4,
         "has_spindle": True
     }
 }
@@ -122,6 +130,7 @@ class DualTrackAIEngine:
             has_spindle = profile["has_spindle"]
             base_rpm = profile["rpm"]
             base_current = profile["current"]
+            base_operating_hours = profile["operating_hours"]
             feat_names = FEATURE_NAMES if has_spindle else FEATURE_NAMES_NO_SPINDLE
 
             # Use machine-specific baselines matching the simulator's actual normal output
@@ -162,12 +171,16 @@ class DualTrackAIEngine:
                 current = np.random.normal(base_current, 1.2 if is_pc else 0.35)
                 volatility = np.random.normal(base_volatility, 0.003 if is_pc else 0.005)
                 workload = np.random.uniform(base_workload_lo, base_workload_hi)
+                operating_hours = np.random.normal(
+                    base_operating_hours,
+                    max(25.0, base_operating_hours * 0.04),
+                )
 
                 if has_spindle:
                     rpm = np.random.normal(base_rpm, base_rpm_std)
-                    normal_raw.append([temp, temp_rate, vib_rms, crest, current, rpm, volatility, workload])
+                    normal_raw.append([temp, temp_rate, vib_rms, crest, current, rpm, volatility, workload, operating_hours])
                 else:
-                    normal_raw.append([temp, temp_rate, vib_rms, crest, current, volatility, workload])
+                    normal_raw.append([temp, temp_rate, vib_rms, crest, current, volatility, workload, operating_hours])
 
             X_normal_raw = np.array(normal_raw)
             train_mean = np.mean(X_normal_raw, axis=0)
@@ -238,10 +251,15 @@ class DualTrackAIEngine:
                     workload = np.random.uniform(55.0, 85.0)
                     fault_labels.append(4)
 
+                # Operating age is part of the risk signal: degradation examples
+                # trend older while healthy examples remain around each profile's
+                # known operating-hour baseline.
+                operating_hours = base_operating_hours + severity * 250.0 + np.random.normal(0, 15.0)
+
                 if has_spindle:
-                    failure_raw.append([temp, temp_rate, vib_rms, crest, current, rpm, volatility, workload])
+                    failure_raw.append([temp, temp_rate, vib_rms, crest, current, rpm, volatility, workload, operating_hours])
                 else:
-                    failure_raw.append([temp, temp_rate, vib_rms, crest, current, volatility, workload])
+                    failure_raw.append([temp, temp_rate, vib_rms, crest, current, volatility, workload, operating_hours])
 
                 # Smooth probabilistic failure label based on severity
                 if severity < 0.28:
@@ -257,12 +275,37 @@ class DualTrackAIEngine:
             y_all = np.array(labels)
             y_fault = np.array(fault_labels)
 
+            X_train, X_validation, y_train, y_validation = train_test_split(
+                X_all_z,
+                y_all,
+                test_size=0.25,
+                random_state=42,
+                stratify=y_all,
+            )
+
             rf = RandomForestClassifier(
                 n_estimators=60,
                 max_depth=6,
                 random_state=42
             )
-            rf.fit(X_all_z, y_all)
+            rf.fit(X_train, y_train)
+            risk_probabilities = rf.predict_proba(X_validation)[:, 1]
+            risk_predictions = (risk_probabilities >= 0.5).astype(int)
+            failure_validation = {
+                "sample_count": int(len(y_validation)),
+                "accuracy": float(accuracy_score(y_validation, risk_predictions)),
+                "precision": float(precision_score(y_validation, risk_predictions, zero_division=0)),
+                "recall": float(recall_score(y_validation, risk_predictions, zero_division=0)),
+                "brier_score": float(brier_score_loss(y_validation, risk_probabilities)),
+            }
+
+            X_fault_train, X_fault_validation, y_fault_train, y_fault_validation = train_test_split(
+                X_all_z,
+                y_fault,
+                test_size=0.25,
+                random_state=42,
+                stratify=y_fault,
+            )
 
             # Multi-class fault mode classifier
             fault_clf = RandomForestClassifier(
@@ -270,7 +313,14 @@ class DualTrackAIEngine:
                 max_depth=6,
                 random_state=42
             )
-            fault_clf.fit(X_all_z, y_fault)
+            fault_clf.fit(X_fault_train, y_fault_train)
+            diagnosis_validation = {
+                "sample_count": int(len(y_fault_validation)),
+                "accuracy": float(accuracy_score(
+                    y_fault_validation,
+                    fault_clf.predict(X_fault_validation),
+                )),
+            }
 
             self.models[machine_id] = {
                 "iso_forest": iso_forest,
@@ -280,7 +330,9 @@ class DualTrackAIEngine:
                 "feature_names": feat_names,
                 "importances": rf.feature_importances_,
                 "train_mean": train_mean,
-                "train_std": train_std
+                "train_std": train_std,
+                "failure_validation": failure_validation,
+                "diagnosis_validation": diagnosis_validation,
             }
 
         print("[Layer 0] Training completed successfully. Models registered in memory.")
@@ -314,6 +366,11 @@ class DualTrackAIEngine:
 
         # Also maintain rolling buffer for trend slope estimation (used in RUL)
         rolling_z, r_mean, r_std = self.rolling_buffer.push_and_get_zscores(machine_id, raw_features)
+        normalized_slopes = {
+            name: self.rolling_buffer.get_feature_slope(machine_id, index)
+            / (train_std[index] + 1e-8)
+            for index, name in enumerate(feat_names)
+        }
 
         X = np.array([baseline_z])
 
@@ -435,7 +492,12 @@ class DualTrackAIEngine:
             # CRITICAL: Catastrophic damage (Bearing Spall Zone D, Spindle Overheat >=78°C, or health < 45)
             # WARNING: Early/moderate degradation (Gradual drift, belt slip, ISO Zone C, 68-78°C temp)
             # NOMINAL: Normal healthy machine
-            if health_score < 45.0 or iso_zone == "Zone D (Danger)" or temp_val >= crit_threshold:
+            if (
+                health_score < 45.0
+                or iso_zone == "Zone D (Danger)"
+                or temp_val >= crit_threshold
+                or failure_prob >= 0.85
+            ):
                 status = "CRITICAL"
                 color = "#EF4444"
             elif health_score <= 82.0 or iso_zone in ("Zone B (Acceptable)", "Zone C (Unsatisfactory)") or temp_val >= warn_threshold or failure_prob >= 0.22 or anomaly_score >= 18.0:
@@ -559,10 +621,12 @@ class DualTrackAIEngine:
         prior = FAULT_PRIORS.get(probable_fault, FAULT_PRIORS["Normal"])
         z_dict = {feat_names[i]: abs(baseline_z[i]) for i in range(len(feat_names))}
         raw_weights = {}
-        for feat in feat_names:
+        for index, feat in enumerate(feat_names):
             p_weight = prior.get(feat, 0.04)
+            learned_weight = float(model_info["importances"][index])
             z_mag = min(6.0, z_dict.get(feat, 0.0))
-            raw_weights[feat] = p_weight * (1.0 + z_mag * 0.5)
+            blended_weight = 0.5 * p_weight + 0.5 * learned_weight
+            raw_weights[feat] = blended_weight * (1.0 + z_mag * 0.5)
 
         total_w = sum(raw_weights.values()) + 1e-8
         norm_weights = {k: v / total_w for k, v in raw_weights.items()}
@@ -575,7 +639,8 @@ class DualTrackAIEngine:
             "motor_current_a": "Motor Current",
             "rpm_volatility": "RPM Volatility",
             "spindle_rpm": "Spindle RPM",
-            "workload_pct": "Workload Ratio"
+            "workload_pct": "Workload Ratio",
+            "operating_hours": "Operating Hours"
         }
 
         sorted_feats = sorted(norm_weights.items(), key=lambda item: item[1], reverse=True)[:4]
@@ -586,6 +651,13 @@ class DualTrackAIEngine:
         ]
 
         # 7. Remaining Useful Life (RUL) Prognostics with Fault Physics Differentiation
+        degradation_trend = float(np.clip(sum((
+            max(0.0, normalized_slopes.get("temperature_c", 0.0)),
+            max(0.0, normalized_slopes.get("vibration_rms_mm_s", 0.0)),
+            max(0.0, normalized_slopes.get("motor_current_a", 0.0)),
+            max(0.0, -normalized_slopes.get("spindle_rpm", 0.0)),
+            max(0.0, normalized_slopes.get("rpm_volatility", 0.0)),
+        )) / 0.35, 0.0, 1.0))
         if status != "NOMINAL":
             severity = max(failure_prob, (100.0 - health_score) / 100.0)
 
@@ -605,6 +677,9 @@ class DualTrackAIEngine:
                 # Default proportional RUL
                 rul_hours = max(1.0, round(float(28.0 * (health_score / 100.0) * (1.0 - failure_prob * 0.5)), 1))
 
+            # Short-term deterioration in several channels shortens the estimate;
+            # stable or improving readings leave the severity-based estimate intact.
+            rul_hours = max(0.4, round(rul_hours * (1.0 - 0.35 * degradation_trend), 1))
             rul_ci = [round(max(0.1, rul_hours * 0.78), 1), round(rul_hours * 1.25, 1)]
         else:
             rul_hours = None
@@ -632,7 +707,8 @@ class DualTrackAIEngine:
             },
             "prognostics": {
                 "rul_hours": rul_hours,
-                "rul_ci": rul_ci
+                "rul_ci": rul_ci,
+                "degradation_trend": round(degradation_trend, 3)
             },
             "chaos": chaos
         }

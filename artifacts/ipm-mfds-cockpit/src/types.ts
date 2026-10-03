@@ -8,7 +8,7 @@ export type Tick = {
   ai: { anomaly_score: number; failure_probability: number; horizon_hrs: number };
   health: { score: number; status: HealthStatus; color?: string; iso_zone: string };
   diagnostics: { probable_fault: string | null; confidence_pct: number; xai_contributors: Contributor[] };
-  prognostics: { rul_hours: number | null; rul_ci: [number, number] | null };
+  prognostics: { rul_hours: number | null; rul_ci: [number, number] | null; degradation_trend?: number };
   chaos: { active: boolean; fault_type: FaultType | null; intensity: number };
 };
 export type Maintenance = { date: string; action: string; technician: string; part: string | null };
