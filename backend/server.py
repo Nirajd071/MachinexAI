@@ -39,6 +39,20 @@ from pdf_generator import generate_work_order_pdf
 fleet = FleetSimulator()
 ai_engine = DualTrackAIEngine()
 
+# Load environment variables from backend/.env if present
+try:
+    _env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(_env_path):
+        with open(_env_path, "r") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith("#") and "=" in _line:
+                    _k, _v = _line.split("=", 1)
+                    if _k.strip() not in os.environ:
+                        os.environ[_k.strip()] = _v.strip()
+except Exception as _e:
+    print(f"[ENV Warning] Failed to load .env: {_e}")
+
 # In-Memory Ring Buffer: stores last 1,000 ticks per machine for instant UI hydration
 BUFFER_MAX = 1000
 ring_buffers: Dict[str, deque] = {
