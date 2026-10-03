@@ -31,8 +31,10 @@ class PS8RequirementTests(unittest.TestCase):
             age_index = model["feature_names"].index("operating_hours")
             self.assertGreater(model["importances"][age_index], 0)
             self.assertEqual(model["failure_validation"]["sample_count"], 450)
-            self.assertGreaterEqual(model["failure_validation"]["recall"], 0)
-            self.assertGreaterEqual(model["diagnosis_validation"]["accuracy"], 0)
+            self.assertGreater(model["failure_validation"]["accuracy"], 0.8)
+            self.assertGreater(model["failure_validation"]["recall"], 0.7)
+            self.assertLess(model["failure_validation"]["brier_score"], 0.15)
+            self.assertGreater(model["diagnosis_validation"]["accuracy"], 0.8)
 
         raw = server.fleet.get_machine("CNC-01").generate_raw_tick()
         tick = server.ai_engine.evaluate_tick(raw)
@@ -91,6 +93,20 @@ class PS8RequirementTests(unittest.TestCase):
         for machine in metrics.values():
             self.assertEqual(machine["failure_risk"]["sample_count"], 450)
             self.assertEqual(machine["fault_diagnosis"]["sample_count"], 450)
+
+    def test_core_http_and_websocket_routes_are_registered(self):
+        routes = {route.path for route in server.app.routes}
+        self.assertTrue({
+            "/health",
+            "/machines",
+            "/model/metrics",
+            "/history",
+            "/chaos/inject",
+            "/work-order/pdf",
+            "/work-order/sign-off",
+            "/maintenance",
+            "/ws/telemetry/live",
+        }.issubset(routes))
 
     def test_history_endpoint_returns_persisted_ticks_when_ring_is_empty(self):
         raw = server.fleet.get_machine("CNC-02").generate_raw_tick()
