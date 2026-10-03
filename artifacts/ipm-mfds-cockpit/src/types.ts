@@ -18,4 +18,5 @@ export const MACHINE_SEEDS: Machine[] = [
   { machine_id: 'CNC-01', name: 'CNC Mill #1', type: 'Spindle Lathe', operating_hours: 1248.5, service_age_hrs: 320 },
   { machine_id: 'CNC-02', name: 'CNC Mill #2', type: 'Heavy Milling', operating_hours: 2816.2, service_age_hrs: 187 },
   { machine_id: 'PRN-01', name: 'Ender-3 Pro', type: '3D Printer', operating_hours: 684.7, service_age_hrs: 94 },
+  { machine_id: 'PC-01', name: 'Acer Nitro Host PC', type: 'Live Hardware Rig', operating_hours: 312.4, service_age_hrs: 45 },
 ];

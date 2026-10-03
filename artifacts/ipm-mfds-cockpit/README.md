@@ -1,6 +1,6 @@
 # IPM-MFDS Technician Cockpit
 
-Real-time industrial predictive-maintenance cockpit for the CNC-01, CNC-02, and PRN-01 machines. It includes judge-controlled fault injection, live telemetry and diagnosis views, maintenance history, and work-order downloads.
+Real-time industrial predictive-maintenance cockpit for the CNC-01, CNC-02, and PRN-01 machines. It includes fault injection, live telemetry and diagnosis views, maintenance history, and work-order downloads. The local simulator is the default; live mode requires the separate FastAPI gateway.
 
 ## Run
 
@@ -28,7 +28,7 @@ VITE_API_URL=http://localhost:8000
 VITE_WS_URL=ws://localhost:8000/ws/telemetry/live
 ```
 
-When the gateway cannot connect within three seconds, the cockpit switches to its local simulator. Live mode uses the gateway's health status without recalculating thresholds in the browser.
+Mock mode is the default. Set `VITE_USE_MOCK=false` to use the separate FastAPI gateway. If that gateway is unavailable, live mode displays a connection error and clears buffered live readings; it does not switch modes automatically. Live mode uses the gateway's health status without recalculating thresholds in the browser.
 
 ## Source map
 

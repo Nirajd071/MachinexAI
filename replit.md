@@ -1,45 +1,23 @@
-# [Project name]
+# MachinexAI Technician Cockpit
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Predictive maintenance dashboard for simulated CNC and 3D printer equipment, with an optional live FastAPI telemetry gateway.
 
-## Run & Operate
+## Run
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/ipm-mfds-cockpit run dev` starts the cockpit on port 5173 in local simulator mode.
+- `python3 -m pip install -r backend/requirements.txt` installs the FastAPI gateway dependencies.
+- From `backend/`, run `python3 -m uvicorn server:app --host 0.0.0.0 --port 8000` to start the optional gateway.
+- Set `VITE_USE_MOCK=false` and configure `VITE_API_URL` / `VITE_WS_URL` to connect the cockpit to that gateway.
+- `pnpm --filter @workspace/ipm-mfds-cockpit run typecheck` checks cockpit TypeScript.
 
-## Stack
+## Architecture
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- `artifacts/ipm-mfds-cockpit` — React/Vite cockpit and local simulator.
+- `backend` — FastAPI telemetry gateway, simulator, AI engine, SQLite persistence, PDF generation, and optional SMTP alerting.
+- `artifacts/api-server`, `lib/api-spec`, `lib/api-zod`, `lib/api-client-react`, and `lib/db` — separate Express health-check/API scaffold; this is not the FastAPI gateway used by the cockpit.
 
-## Where things live
+## Operations notes
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Mock mode is the default. Live mode does not silently switch to mock mode when the gateway is unavailable.
+- Alert delivery is disabled unless SMTP settings and an alert recipient are configured. Ethereal preview delivery requires explicit `SMTP_TEST_MODE=true`.
+- `backend/stress_pc.py` is a CPU load generator for the physical host telemetry demo. Use it only when intentionally running that demonstration.

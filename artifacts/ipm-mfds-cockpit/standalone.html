@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IPM-MFDS · 3D Digital Twin</title>
+<style>
+:root{--f:"Barlow","Segoe UI",Roboto,Arial,sans-serif;--fc:"Barlow Condensed","Arial Narrow","Roboto Condensed",Arial,sans-serif;--sc:#2E9E4F;--ink:#16191C;--mut:#5F656B;--rule:#BDC0BB;--paper:#E6E7E4;--side:#F3F4F2}
+body[data-s=WARNING]{--sc:#E0A100}body[data-s=CRITICAL]{--sc:#D32F2F}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--f);font-size:15px;color:var(--ink);background:var(--paper);overflow:hidden}
+body::before{content:"";position:fixed;left:0;top:0;bottom:0;width:14px;background:var(--sc);transition:background .4s;z-index:5}
+.num{font-variant-numeric:tabular-nums}
+.app{position:fixed;inset:0 0 0 14px;display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"top top" "stage side" "dock side"}
+.top{grid-area:top;display:flex;align-items:stretch;gap:28px;padding:0 20px;border-bottom:1px solid var(--ink);flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;padding:12px 0}
+.brand b{font-family:var(--fc);font-size:26px;font-weight:700;letter-spacing:.01em}
+.brand span{color:var(--mut);font-size:15px}
+.tabs{display:flex;gap:22px;flex:1}
+.tab{background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;padding:0 2px;color:var(--mut);font:inherit;font-weight:600;font-size:17px;cursor:pointer;display:flex;align-items:center;gap:9px}
+.tab:hover{color:var(--ink)}.tab.on{color:var(--ink);border-bottom-color:var(--ink)}
+.tab b{width:10px;height:10px;background:#2E9E4F}.tab[data-s=WARNING] b{background:#E0A100}.tab[data-s=CRITICAL] b{background:#D32F2F}
+.right{display:flex;align-items:center;gap:16px;font-size:14px}
+.chip{background:none;border:0;font:inherit;font-size:14px;color:var(--mut)}
+button.chip{cursor:pointer;color:var(--ink);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--rule)}button.chip:hover{text-decoration-color:var(--ink)}
+.stage{grid-area:stage;position:relative;overflow:hidden}
+#gl{position:absolute;inset:0;cursor:grab}#gl:active{cursor:grabbing}#gl canvas{display:block;touch-action:none}
+#gl .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:40px;color:var(--mut)}
+#alert{position:absolute;left:0;right:0;top:0;transform:translateY(-100%);transition:transform .3s;padding:9px 20px;background:#D32F2F;color:#fff;font-weight:600;z-index:3}
+#alert.on{transform:none}
+.hint{position:absolute;left:20px;bottom:12px;font-size:13px;color:var(--mut);pointer-events:none}
+.lbl{position:absolute;left:0;top:0;pointer-events:none;background:var(--side);border:1px solid var(--c);border-left-width:4px;color:var(--ink);padding:3px 9px;border-radius:2px;font-size:13.5px;font-weight:600;white-space:nowrap;will-change:transform;display:none;z-index:2}
+.dock{grid-area:dock;display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--rule)}
+.dock .t{font-weight:600}.dock .t small{display:block;font-weight:400;font-size:13px;color:var(--mut)}
+.fs{display:flex;gap:6px;flex-wrap:wrap}
+.fb{border:1px solid var(--ink);background:transparent;color:var(--ink);border-radius:3px;padding:6px 13px;font:inherit;font-weight:600;cursor:pointer}
+.fb:hover{background:rgba(22,25,28,.07)}.fb.on{background:var(--ink);color:#fff}.fb.rs{border-color:transparent;text-decoration:underline;text-underline-offset:3px}
+.sl{display:flex;align-items:center;gap:12px;flex:1;min-width:200px}
+.sl .num{font-family:var(--fc);font-size:22px;font-weight:600}
+input[type=range]{flex:1;accent-color:var(--ink);height:26px}
+button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.side{grid-area:side;background:var(--side);border-left:1px solid var(--ink);overflow:auto}
+#pl,#pr{padding:18px 24px;display:flex;flex-direction:column;gap:14px}
+#pl{border-bottom:1px solid var(--rule)}
+.lab{font-size:14px;color:var(--mut)}
+.hd{display:flex;gap:18px;align-items:flex-start}
+.score{font-family:var(--fc);font-size:104px;font-weight:700;line-height:.82;color:var(--sc);margin-top:6px}
+.st{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pill{display:flex;align-items:center;gap:8px;font-family:var(--fc);font-size:24px;font-weight:700;color:var(--ink)}
+.pill::before{content:"";width:12px;height:12px;background:var(--sc)}
+.dx{font-size:15px;line-height:1.35}
+.rul{border-top:1px solid var(--rule);padding-top:12px}.rul b{display:block;font-family:var(--fc);font-size:34px;font-weight:700;line-height:1.1}.rul span{font-size:14px;color:var(--mut)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.row{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--mut)}.row b{font-family:var(--fc);font-size:22px;font-weight:600;color:var(--ink)}
+.mt{height:4px;background:rgba(22,25,28,.12);overflow:hidden;margin-top:4px}.mt i{display:block;height:100%;transition:width .4s}
+.sg>div{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--rule)}
+.sg b{font-family:var(--fc);font-size:26px;font-weight:600}.sg span{color:var(--mut)}
+.xr{display:grid;grid-template-columns:1fr 38px;gap:2px 8px;font-size:14px;margin-top:7px}.xr b{font-family:var(--fc);font-size:17px;font-weight:600;text-align:right}.xr .mt{grid-column:1/3;margin-top:0}
+.wave{width:100%;height:60px;display:block;margin-top:6px;border-bottom:1px solid var(--ink)}.wave .a{fill:rgba(22,25,28,.08);stroke:none}.wave .l{fill:none;stroke:var(--ink);stroke-width:1.6;stroke-linejoin:round}
+.wo{display:none;border:0;border-radius:3px;padding:12px;font:inherit;font-weight:700;font-size:16px;color:#fff;background:var(--ink);cursor:pointer}
+.wo.on{display:block}body[data-s=CRITICAL] .wo{background:#D32F2F}
+#toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:3px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:20}#toast.show{opacity:1}
+@media(max-width:1100px){.app{grid-template-columns:minmax(0,1fr) 320px}.score{font-size:84px}}
+@media(max-width:860px){body{overflow:auto}body::before{width:8px}.app{position:static;margin-left:8px;display:flex;flex-direction:column;min-height:100%}.top{gap:10px 20px}.stage{order:1;height:56vh;min-height:320px;flex:none}.dock{order:2}.side{order:3;border-left:0;border-top:1px solid var(--ink);overflow:visible}.hint{display:none}.tabs{flex-basis:100%;order:3;padding-top:4px}.tab{padding:8px 2px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.app{grid-template-columns:304px minmax(0,1fr) 316px;grid-template-rows:auto auto minmax(0,1fr);grid-template-areas:"top top top" "fleet fleet fleet" "L mid R"}
+.top{justify-content:space-between;gap:20px}.right{margin-left:auto}
+.fleet{grid-area:fleet;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-bottom:1px solid var(--ink)}
+.tab{display:flex;flex-direction:column;align-items:stretch;gap:2px;text-align:left;padding:9px 20px;margin:0;border:0;border-right:1px solid var(--rule);border-bottom:3px solid transparent;color:var(--ink);font-weight:400;font-size:14px}
+.tab:last-child{border-right:0}.tab.on{background:var(--side);border-bottom-color:var(--ink)}
+.tr{display:flex;align-items:center;gap:8px}.tn{font-weight:700;font-size:16px;flex:1}.th{font-family:var(--fc);font-size:26px;font-weight:700;line-height:1}
+.tk,.tm{color:var(--mut);font-size:13px}
+.col{min-height:0;overflow:auto;background:var(--side)}.L{grid-area:L;border-right:1px solid var(--ink)}.R{grid-area:R;border-left:1px solid var(--ink)}
+.blk{padding:15px 22px;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:11px}.blk h3{font-size:15px;font-weight:700}
+.mid{grid-area:mid;min-width:0;min-height:0;display:flex;flex-direction:column}.mid .stage{flex:1;min-height:240px}
+.charts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--ink)}
+.ch{padding:9px 14px;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:space-between}.ch:last-child{border-right:0}
+.ch h4{font-size:13px;font-weight:700;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.ch h4 small{font-weight:600;color:var(--ink);font-size:12.5px}
+.ch svg{width:100%;height:74px;display:block;margin-top:4px;border-bottom:1px solid var(--rule);background:rgba(22,25,28,.02);border-radius:2px}
+.metrics{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1.3fr;border-top:1px solid var(--ink)}
+.metrics>div{padding:8px 14px;border-right:1px solid var(--rule);font-size:12.5px;color:var(--mut)}.metrics>div:last-child{border-right:0}
+.metrics b{display:block;font-family:var(--fc);font-size:22px;font-weight:600;color:var(--ink);line-height:1.15}
+.fa .fs{display:grid;grid-template-columns:1fr 1fr}.cap{font-size:13.5px;color:var(--mut)}
+.scl{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}
+.fb.rs{text-decoration:none;border-color:var(--ink)}
+.zone{font-size:13.5px;color:var(--mut)}
+.spk{width:100%;height:28px;display:block;margin-top:6px}
+.act{border:1px solid var(--ink);background:transparent;border-radius:3px;padding:9px;font:inherit;font-weight:600;cursor:pointer;color:var(--ink)}
+.act.pri{background:var(--ink);color:#fff}body[data-s=CRITICAL] .act.pri:not(:disabled){background:#D32F2F;border-color:#D32F2F}
+.act:disabled{opacity:.38;cursor:not-allowed}#svl{white-space:pre-line}
+.sub{font-size:12px;color:var(--mut);display:block}
+@media(max-width:1180px){body{overflow:auto}.app{position:static;margin-left:14px;display:flex;flex-direction:column;min-height:100%}.top{order:0}.fleet{order:1;grid-template-columns:repeat(2,minmax(0,1fr))}.mid{order:2}.mid .stage{flex:none;height:54vh;min-height:320px}.L{order:3}.R{order:4}.L,.R{border:0;border-top:1px solid var(--ink);overflow:visible}.charts{grid-template-columns:1fr}.ch{border-right:0;border-bottom:1px solid var(--rule)}.metrics{grid-template-columns:1fr 1fr}.metrics>div{border-bottom:1px solid var(--rule)}}
+</style><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+</head><body data-s="NOMINAL">
+<div class="app">
+ <header class="top"><div class="brand"><b>IPM-MFDS</b><span>Technician predictive cockpit</span></div>
+  <div class="right"><span class="chip" id="dt"></span><span class="chip num" id="conn"></span><span class="chip num" id="loop" title="Time from command to the first tick that shows the change">Last loop: none yet</span><button class="chip" id="rot">Auto-rotate on</button><button class="chip" id="mute">Sound on</button></div></header>
+ <nav class="fleet" id="tabs"></nav>
+ <aside class="col L">
+  <section class="blk fa"><h3>Live chaos fault injector</h3><div class="fs" id="fs"></div>
+   <div class="sl"><input id="sl" type="range" min="0" max="100" value="0" aria-label="Fault intensity"><b class="num" id="iv" style="min-width:44px;text-align:right">0%</b></div>
+   <div class="scl"><span>0 healthy</span><span>100 maximum stress</span></div><div class="cap" id="cap"></div><button class="fb rs" id="rs">Self-heal / reset</button></section>
+  <section class="blk" id="pl"><div class="lab">Health score, EWMA risk engine</div>
+   <div class="hd"><div class="score num" id="hs">100</div><div class="st"><span class="pill" id="pill">Healthy</span><div class="dx" id="dx">All systems operating normally</div></div></div><div class="zone" id="zone"></div></section>
+  <section class="blk"><div class="two">
+   <div><div class="row"><span>Anomaly score<span class="sub">Isolation Forest, novelty</span></span><b class="num" id="an">0</b></div><div class="mt"><i id="anb" style="background:#16191C;width:0"></i></div><svg class="spk" viewBox="0 0 300 28" preserveAspectRatio="none"><path id="sa" fill="none" stroke="#16191C" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg></div>
+   <div><div class="row"><span>Failure risk<span class="sub">Failure probability classifier</span></span><b class="num" id="fp">0%</b></div><div class="mt"><i id="fpb" style="background:var(--sc);width:0"></i></div><svg class="spk" viewBox="0 0 300 28" preserveAspectRatio="none"><path id="sb" fill="none" stroke="var(--sc)" stroke-width="1.4" vector-effect="non-scaling-stroke"/></svg></div></div></section>
+  <section class="blk"><div class="rul" style="border:0;padding:0"><b class="num" id="rul">Stable</b><span id="rsub">No failure predicted</span></div></section>
+ </aside>
+ <div class="mid">
+  <main class="stage"><div id="gl"></div><div id="alert"></div>
+   <div class="lbl" id="lb1" style="--c:#5F656B"></div><div class="lbl" id="lb2" style="--c:#E0A100"></div><div class="lbl" id="lb3" style="--c:#16191C"></div>
+   <div class="hint">Drag to rotate, scroll to zoom</div></main>
+  <div class="charts">
+   <div class="ch"><h4><span>Vibration (ISO 10816-3)</span><small id="c1-val" class="num">-- mm/s</small></h4><svg id="c1" viewBox="0 0 300 64" preserveAspectRatio="none"></svg></div>
+   <div class="ch"><h4><span>Thermal dynamics</span><small id="c2-val" class="num">-- °C</small></h4><svg id="c2" viewBox="0 0 300 64" preserveAspectRatio="none"></svg></div>
+   <div class="ch"><h4><span>Power & drive</span><small id="c3-val" class="num">-- A</small></h4><svg id="c3" viewBox="0 0 300 64" preserveAspectRatio="none"></svg></div></div>
+  <div class="metrics"><div>Workload ratio<b class="num" id="mld">0%</b><div class="mt"><i id="mldb" style="background:var(--ink);width:0"></i></div></div><div>Operating hours<b class="num" id="mhr">0</b></div><div>Service age<b class="num" id="msv">0</b></div><div>RPM volatility<b class="num" id="mcv">0</b></div><div id="gw"></div></div>
+ </div>
+ <aside class="col R">
+  <section class="blk"><div class="sg" id="sens"></div></section>
+  <section class="blk"><h3>Root-cause attribution</h3><div class="lab" id="xnote">No fault detected</div><div id="xai"></div></section>
+  <section class="blk"><h3>Maintenance and service history</h3><div class="lab num" id="svc">No data yet</div><div class="lab" id="svl">No service records available.</div></section>
+  <section class="blk"><h3>Closed-loop maintenance action</h3><button class="act pri" id="wo" disabled>Download work order</button><button class="act" id="so" disabled>Digital sign-off</button><button class="act" id="al" disabled>Alert admin by email and SMS</button><div class="lab">Available when health status is warning or critical. <span class="num" id="smp"></span></div></section>
+ </aside>
+</div>
+<div id="toast" role="status"></div>
+<script src="./three.min.js"></script>
+<script>
+const Q=new URLSearchParams(location.search);
+const CFG={WS:Q.get('ws')||'ws://localhost:8000/ws/telemetry/live',API:Q.get('api')||'http://localhost:8000',MOCK:Q.get('mock')==='1'};
+const MACH=[{id:'CNC-01',name:'CNC Mill #1',type:'cnc',kind:'Spindle lathe',svc:320},{id:'CNC-02',name:'CNC Mill #2',type:'cnc',kind:'Heavy milling',svc:187},{id:'PRN-01',name:'Ender-3 Pro',type:'prn',kind:'3D printer',svc:94},{id:'PC-01',name:'Acer Nitro Host PC',type:'pc',kind:'Live hardware rig',svc:47}];
+const FAULTS={bearing_spall:'Bearing spall',spindle_overheat:'Overheat',belt_slip:'Belt slip',gradual_drift:'Gradual drift'};
+const NAMES={bearing_spall:'Bearing spall',spindle_overheat:'Spindle overheat',belt_slip:'Belt slip',gradual_drift:'Gradual drift'};
+const DEF={bearing_spall:85,spindle_overheat:90,belt_slip:75,gradual_drift:50};
+const FX={bearing_spall:{v:1,c:1,t:.3,a:.4},spindle_overheat:{v:.3,c:.1,t:1,a:.6},belt_slip:{v:.5,c:.2,t:.2,a:1},gradual_drift:{v:.5,c:.4,t:.5,a:.5}};
+const WORD={NOMINAL:'Healthy',WARNING:'Warning',CRITICAL:'Critical'},HEX={NOMINAL:'#2E9E4F',WARNING:'#E0A100',CRITICAL:'#D32F2F'};
+const $=s=>document.querySelector(s),clamp=(v,a,b)=>Math.min(b,Math.max(a,v)),lerp=(a,b,t)=>a+(b-a)*t,rnd=()=>Math.random()-.5;
+const S={log:{},sel:'CNC-01',cur:{},buf:{},st:{},ch:{},cnt:0,fps:0,last:0,mock:false,loop:null,muted:false,hs:100,auto:true};
+MACH.forEach(m=>S.ch[m.id]={f:'bearing_spall',i:0});
+
+/* mock engine */
+const M={};MACH.forEach((m,k)=>M[m.id]={i:0,f:'bearing_spall',sc:100,h:[1248.5,2816.7,685.2,2.1][k]});
+function mockTick(id){const m=M[id],fx=FX[m.f],i=m.i/100;m.sc=lerp(m.sc,100-i*88,.04);m.h+=.00006;const sc=Math.round(m.sc);
+ const vib=1.1+i*(1+5*fx.v)+rnd()*.15*(1+i*3),cr=2.8+i*(.5+3*fx.c)+rnd()*.12,tp=42+i*(30+40*fx.t)+rnd()*.6,ca=4.2+i*(1+3.5*fx.a)+rnd()*.12,rp=4900-i*(fx.a>.9?1200:200)+rnd()*40*(1+i*5);
+ const st=sc>75?'NOMINAL':sc>40?'WARNING':'CRITICAL',w=[fx.c+.1,fx.v+.1,fx.a+.1,fx.t+.1],ws=w.reduce((a,b)=>a+b),nm=['Vibration crest factor','Vibration RMS','Motor current','Temperature'];
+ const rul=sc>75?null:+(sc*.11).toFixed(1);
+ return{machine_id:id,timestamp:new Date().toISOString(),telemetry:{temperature_c:tp,temp_rate_c_per_min:i*3,vibration_rms_mm_s:vib,vibration_crest_factor:cr,motor_current_a:ca,spindle_rpm:rp,workload_pct:70+i*15,operating_hours:m.h,service_age_hrs:MACH.find(x=>x.id===id).svc+(m.h%5)},
+ ai:{anomaly_score:clamp(Math.round(100-sc+rnd()*4),0,100),failure_probability:clamp((100-sc)/100*1.05,0,1)},health:{score:sc,status:st},
+ diagnostics:{probable_fault:st==='NOMINAL'?null:NAMES[m.f],confidence_pct:st==='NOMINAL'?0:+(70+i*22).toFixed(1),xai_contributors:w.map((x,k)=>({sensor:nm[k],weight:x/ws}))},prognostics:{rul_hours:rul,rul_ci:rul?[+(rul*.77).toFixed(1),+(rul*1.26).toFixed(1)]:null}}}
+let mockTimer=null;
+function startMock(){if(mockTimer)return;S.mock=true;S.buf={};mockTimer=setInterval(()=>MACH.forEach(m=>ingest(mockTick(m.id))),50);badge()}
+function stopMock(){clearInterval(mockTimer);mockTimer=null;S.mock=false;S.buf={};badge()}
+
+let ws,retry=0;
+function connect(){
+ if(CFG.MOCK)return startMock();
+ try{
+   ws=new WebSocket(CFG.WS);
+ }catch(e){
+   console.warn("WebSocket construct error", e);
+   return startMock();
+ }
+ const to=setTimeout(()=>{
+   if(!ws || ws.readyState !== WebSocket.OPEN) {
+     console.warn("WebSocket timeout connecting to", CFG.WS);
+     startMock();
+   }
+ }, 3000);
+ ws.onopen=()=>{clearTimeout(to);retry=0;stopMock();hydrate();console.log("WebSocket connected to live backend");};
+ ws.onmessage=e=>{try{ingest(JSON.parse(e.data))}catch(_){}};
+ ws.onclose=()=>{clearTimeout(to);console.warn("WebSocket closed, falling back to mock");startMock();setTimeout(connect,Math.min(5000,500*2**retry++))};
+ ws.onerror=err=>{console.warn("WebSocket error:", err);};
+}
+
+async function hydrate(){if(S.mock)return;try{const r=await fetch(`${CFG.API}/history?machine_id=${S.sel}&limit=400`),a=await r.json();if(Array.isArray(a)){S.buf[S.sel]=a.reverse().slice(-400);ui();}}catch(_){}}
+
+async function inject(f,i){
+ const id=S.sel;
+ S.ch[id]={f,i};
+ S.loop={t0:performance.now(),id,sc:S.cur[id]?.health?.score??100};
+ sync();
+ if(S.mock){M[id].f=f;M[id].i=i;return}
+ try{
+   const r=await fetch(CFG.API+'/chaos/inject',{
+     method:'PATCH',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({machine_id:id,fault_type:f,intensity:Number(i)})
+   });
+   if(!r.ok)throw new Error('HTTP '+r.status);
+ }catch(e){
+   console.error("Inject error:", e);
+   // Fallback locally so UI doesn't break
+   if(M[id]){M[id].f=f;M[id].i=i;}
+   toast('Could not reach backend. Check if FastAPI is on port 8000.');
+ }
+}
+
+async function wo(){
+ try{
+   const r=await fetch(`${CFG.API}/work-order/pdf?machine_id=${S.sel}`);
+   if(!r.ok)throw new Error('HTTP '+r.status);
+   const b=await r.blob(),a=document.createElement('a');
+   a.href=URL.createObjectURL(b);
+   a.download=`WO_${S.sel}_${Date.now()}.pdf`;
+   a.click();
+ }catch(e){
+   console.error("WO download error:", e);
+   toast('Work-order download failed.');
+ }
+}
+
+/* data in */
+function ingest(t){
+ const id=t.machine_id;
+ S.cur[id]=t;
+ const b=S.buf[id]??=[];
+ b.push(t);
+ if(b.length>1200)b.shift();
+ S.last=performance.now();
+ if(id===S.sel)S.cnt++;
+ const st=t.health?.status,pv=S.st[id];
+ S.st[id]=st;
+ if(pv&&pv!==st&&id===S.sel)onStatus(st,t);
+ if(S.loop&&S.loop.id===id&&Math.abs((t.health?.score??0)-S.loop.sc)>=2){
+   const ms=performance.now()-S.loop.t0;
+   S.loop=null;
+   const e=$('#loop');
+   e.textContent=`Last loop: ${Math.round(ms)} ms`;
+   e.style.color=ms<400?'#047857':'#B45309';
+ }
+}
+
+function onStatus(st,t){
+ const a=$('#alert');
+ if(st==='CRITICAL'){
+   a.textContent=`Critical: ${t.diagnostics?.probable_fault||'fault detected'}. Work order ready.`;
+   a.className='on';
+   chime();
+ }else{
+   a.className='';
+   if(st==='NOMINAL')toast('Machine is back to normal');
+ }
+}
+
+function chime(){
+ if(S.muted)return;
+ try{
+   const a=new(window.AudioContext||window.webkitAudioContext)();
+   [880,660].forEach((f,k)=>{
+     const o=a.createOscillator(),g=a.createGain();
+     o.frequency.value=f;
+     o.connect(g);
+     g.connect(a.destination);
+     const s=a.currentTime+k*.25;
+     g.gain.setValueAtTime(.15,s);
+     g.gain.exponentialRampToValueAtTime(.001,s+.22);
+     o.start(s);
+     o.stop(s+.25);
+   });
+ }catch(_){}
+}
+
+function toast(s){
+ const e=$('#toast');
+ e.textContent=s;
+ e.classList.add('show');
+ setTimeout(()=>e.classList.remove('show'),2800);
+}
+
+/* static UI */
+const SENS=[
+ {id:'vib',l:'Vibration mm/s',d:2,g:t=>t.telemetry.vibration_rms_mm_s},
+ {id:'tmp',l:'Temperature °C',d:1,g:t=>t.telemetry.temperature_c},
+ {id:'cur',l:'Motor current A',d:2,g:t=>t.telemetry.motor_current_a},
+ {id:'rpm',l:'Spindle speed rpm',d:0,g:t=>t.telemetry.spindle_rpm}
+];
+$('#sens').innerHTML=SENS.map(k=>`<div><b class="num" id="s-${k.id}">0</b><span>${k.l}</span></div>`).join('');
+$('#tabs').innerHTML=MACH.map(m=>`<button class="tab" data-id="${m.id}" data-s="NOMINAL"><span class="tr"><b></b><span class="tn">${m.name}</span><span class="th num" id="th-${m.id}">--</span></span><span class="tk">${m.kind}, health score</span><span class="tm num" id="tm-${m.id}"></span></button>`).join('');
+
+function sync(){
+ const c=S.ch[S.sel],m=MACH.find(x=>x.id===S.sel);
+ $('#sl').value=c.i;
+ $('#iv').textContent=c.i+'%';
+ $('#cap').textContent='Injecting: '+(c.i?`${NAMES[c.f]} at ${c.i}%`:'no active fault');
+ $('#fs').innerHTML=Object.entries(FAULTS).map(([k,v])=>`<button class="fb ${c.i&&k===c.f?'on':''}" data-f="${k}">${v}</button>`).join('');
+ document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.id===S.sel));
+}
+
+function badge(){
+ const stale=!S.mock&&S.last&&performance.now()-S.last>2000;
+ $('#conn').textContent=S.mock?'Simulated data':stale?'Signal lost':`Live · ${S.fps} updates/s`;
+}
+
+function plot(id,defs,w=300,h=64){
+ const el=$('#'+id);if(!el)return;
+ let out=`<line x1="0" y1="${(h*0.33).toFixed(1)}" x2="${w}" y2="${(h*0.33).toFixed(1)}" stroke="#D2D5CF" stroke-width="0.7" stroke-dasharray="2 3"/><line x1="0" y1="${(h*0.66).toFixed(1)}" x2="${w}" y2="${(h*0.66).toFixed(1)}" stroke="#D2D5CF" stroke-width="0.7" stroke-dasharray="2 3"/>`;
+ defs.forEach(d=>{
+  if(d.y!=null){
+   const yPos=(h-clamp(d.y,0,1)*(h-6)-3).toFixed(1);
+   out+=`<path d="M0 ${yPos}H${w}" stroke="${d.c}" stroke-dasharray="4 3" fill="none" stroke-width="1.1" vector-effect="non-scaling-stroke"/>`;
+   if(d.label)out+=`<text x="${w-4}" y="${Math.max(9,yPos-3)}" fill="${d.c}" font-size="8.5" font-weight="600" text-anchor="end" font-family="var(--f)">${d.label}</text>`;
+  }else if(d.v&&d.v.length>=2){
+   out+=`<path d="${pathOf(d.v,w,h)}" stroke="${d.c}" fill="none" stroke-width="${d.w||1.4}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+   if(d.dot&&d.v.length>0){
+    const lastQ=d.v[d.v.length-1],lastY=(h-clamp(lastQ,0,1)*(h-6)-3).toFixed(1);
+    out+=`<circle cx="${w-2}" cy="${lastY}" r="3" fill="${d.c}"><animate attributeName="r" values="2.2;3.8;2.2" dur="1.2s" repeatCount="indefinite"/></circle>`;
+   }
+  }
+ });
+ el.innerHTML=out;
+}
+
+function pathOf(v,w,h,close){
+ if(v.length<2)return'';
+ let d='';
+ v.forEach((q,i)=>{const x=i/(v.length-1)*w,y=h-clamp(q,0,1)*(h-6)-3;d+=(i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)});
+ return close?d+`L${w} ${h}L0 ${h}Z`:d;
+}
+
+function ui(){
+ badge();
+ MACH.forEach(m=>{
+   const t=S.cur[m.id];
+   const tabEl = document.querySelector(`.tab[data-id="${m.id}"]`);
+   if(tabEl) tabEl.dataset.s=t?.health?.status||'NOMINAL';
+   const thEl = $('#th-'+m.id);
+   if(thEl) thEl.textContent=t?Math.round(t.health.score):'--';
+   const tmEl = $('#tm-'+m.id);
+   if(tmEl) tmEl.textContent=t?`${(t.telemetry.operating_hours||0).toLocaleString(undefined,{maximumFractionDigits:1})} hrs, ${Math.round(t.telemetry.service_age_hrs||0)} hrs since service`:'';
+ });
+ const d=S.cur[S.sel];
+ if(!d)return;
+ const h=d.health||{},dg=d.diagnostics||{},pg=d.prognostics||{},ai=d.ai||{},st=h.status||'NOMINAL',buf=S.buf[S.sel]||[];
+ document.body.dataset.s=st;
+ $('#pill').textContent=WORD[st];
+ $('#dx').textContent=dg.probable_fault?`${dg.probable_fault} detected, ${dg.confidence_pct}% confidence`:'All systems operating normally';
+ $('#rul').textContent=pg.rul_hours!=null?`${pg.rul_hours} hrs left`:'Stable';
+ $('#rsub').textContent=pg.rul_hours!=null?(pg.rul_ci?`Likely ${pg.rul_ci[0]} to ${pg.rul_ci[1]} hrs until failure`:'until predicted failure'):'No failure predicted';
+ $('#an').textContent=Math.round(ai.anomaly_score??0);
+ $('#anb').style.width=(ai.anomaly_score??0)+'%';
+ const fp=(ai.failure_probability??0)*100;
+ $('#fp').textContent=fp.toFixed(0)+'%';
+ $('#fpb').style.width=fp+'%';
+ SENS.forEach(k=>{$('#s-'+k.id).textContent=(k.g(d)??0).toFixed(k.d)});
+ const tt=buf.slice(-140),tl=d.telemetry||{},g=f=>tt.map(t=>t.telemetry?.[f]??0),nz=(a,lo,hi)=>a.map(x=>clamp((x-lo)/(hi-lo||1e-5),0,1)),yy=(v,lo,hi)=>(v-lo)/(hi-lo||1e-5);
+
+ // 1. Vibration
+ const v_rms=g('vibration_rms_mm_s'),v_cf=g('vibration_crest_factor'),max_v=Math.max(3.0,...v_rms),hi_v=Math.max(4.8,max_v*1.12);
+ plot('c1',[
+   {y:yy(4.5,0,hi_v),c:'#D32F2F',label:'4.5 limit'},
+   {y:yy(1.8,0,hi_v),c:'#2E9E4F',label:'1.8 Good'},
+   {v:nz(v_cf,1.0,7.0),c:'#7A8086',w:1.1},
+   {v:nz(v_rms,0,hi_v),c:(tl.vibration_rms_mm_s||0)>4.5?'#D32F2F':(tl.vibration_rms_mm_s||0)>1.8?'#16191C':'#2E9E4F',w:2.0,dot:true}
+ ]);
+ const elV=$('#c1-val');if(elV)elV.textContent=`${(tl.vibration_rms_mm_s||0).toFixed(2)} mm/s · CF ${(tl.vibration_crest_factor||0).toFixed(1)}`;
+
+ // 2. Thermal
+ const t_c=g('temperature_c'),t_r=g('temp_rate_c_per_min');
+ const min_t=Math.min(...(t_c.length?t_c:[40])),max_t=Math.max(...(t_c.length?t_c:[60]));
+ const lo_t=Math.min(30,Math.floor(min_t-5));
+ const hi_t=Math.max(75,Math.ceil(max_t+6));
+ const t70=yy(70,lo_t,hi_t),t65=yy(65,lo_t,hi_t);
+ const cur_t=tl.temperature_c||0;
+ plot('c2',[
+   ...(t70>=0&&t70<=1?[{y:t70,c:'#D32F2F',label:'70°C limit'}]:[]),
+   ...(t65>=0&&t65<=1?[{y:t65,c:'#E0A100',label:'65°C'}]:[]),
+   {v:nz(t_r,-1.0,4.0),c:'#7A8086',w:1.1},
+   {v:nz(t_c,lo_t,hi_t),c:cur_t>=70?'#D32F2F':cur_t>=65?'#E0A100':'#16191C',w:2.0,dot:true}
+ ]);
+ const elT=$('#c2-val');if(elT)elT.textContent=`${cur_t.toFixed(1)} °C · ${(tl.temp_rate_c_per_min||0)>=0?'+':''}${(tl.temp_rate_c_per_min||0).toFixed(2)} °C/m`;
+
+ // 3. Power
+ const c_a=g('motor_current_a'),rpms=g('spindle_rpm'),max_c=Math.max(6.5,...c_a),hi_c=Math.max(9.0,max_c*1.15),max_rpm=Math.max(4500,...rpms);
+ const cur_c=tl.motor_current_a||0;
+ plot('c3',[
+   {y:yy(7.5,0,hi_c),c:'#D32F2F',label:'7.5 A limit'},
+   {v:nz(rpms,0,Math.max(6000,max_rpm*1.05)),c:'#7A8086',w:1.1},
+   {v:nz(c_a,0,hi_c),c:cur_c>7.5?'#D32F2F':'#16191C',w:2.0,dot:true}
+ ]);
+ const elP=$('#c3-val');if(elP)elP.textContent=`${cur_c.toFixed(2)} A · ${Math.round(tl.spindle_rpm||0)} RPM`;
+
+ $('#sa').setAttribute('d',pathOf(tt.map(t=>(t.ai?.anomaly_score??0)/100),300,28));
+ $('#sb').setAttribute('d',pathOf(tt.map(t=>t.ai?.failure_probability??0),300,28));
+ const vz=tl.vibration_rms_mm_s??0;
+ $('#zone').textContent='ISO 10816-3, Zone '+(vz<=1.8?'A (Good)':vz<=4.5?'B (Satisfactory)':vz<=7.1?'C (Unsatisfactory)':'D (Unacceptable)');
+ const rp=tt.slice(-100).map(t=>t.telemetry?.spindle_rpm??0),mu=rp.reduce((a,b)=>a+b,0)/(rp.length||1),cv=mu?Math.sqrt(rp.reduce((a,b)=>a+(b-mu)**2,0)/rp.length)/mu:0;
+ $('#mld').textContent=(tl.workload_pct??0).toFixed(1)+'%';
+ $('#mldb').style.width=(tl.workload_pct??0)+'%';
+ $('#mhr').textContent=(tl.operating_hours??0).toFixed(1)+' hrs';
+ $('#msv').textContent=Math.round(tl.service_age_hrs??0)+' hrs';
+ $('#mcv').textContent=cv.toFixed(3);
+ $('#gw').textContent=(S.mock?'Simulated telemetry gateway':'Gateway '+CFG.API.replace(/^https?:\/\//,''))+', '+buf.length+' samples';
+ $('#svc').textContent=Math.round(tl.service_age_hrs??0)+' hrs since service';
+ $('#xnote').textContent=dg.probable_fault?dg.probable_fault+' suspected':'No fault detected';
+ const lg=S.log[S.sel]||[];
+ $('#svl').textContent=lg.length?lg.slice(0,3).join('\n'):'No service records available.';
+ const xs=[...(dg.xai_contributors||[])].sort((a,b)=>b.weight-a.weight),cl=['#16191C','#555B61','#8A9096','#B5BABE'];
+ $('#xai').innerHTML=xs.map((x,k)=>`<div class="xr"><span>${x.sensor}</span><b class="num">${Math.round(x.weight*100)}%</b><div class="mt"><i style="width:${x.weight*100}%;background:${cl[k]}"></i></div></div>`).join('');
+ $('#wo').disabled=$('#so').disabled=$('#al').disabled=st==='NOMINAL';
+}
+
+/* ---------------- 3D scene ---------------- */
+function init3d(){
+ const host=$('#gl'),renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+ renderer.setPixelRatio(Math.min(2,devicePixelRatio||1));
+ host.appendChild(renderer.domElement);
+ const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(42,1,.1,100);
+ scene.add(new THREE.HemisphereLight(0xffffff,0xa4a7a9,.95));
+ const key=new THREE.DirectionalLight(0xffffff,.9);key.position.set(6,10,8);scene.add(key);
+ const rim=new THREE.DirectionalLight(0xfff1d6,.7);rim.position.set(-8,5,-6);scene.add(rim);
+ const pl=new THREE.PointLight(0x2e9e4f,1.6,14);pl.position.set(0,3,2);scene.add(pl);
+ const grid=new THREE.GridHelper(36,36,0xb4b6b2,0xcfd1cd);grid.position.y=-.1;scene.add(grid);
+ const root=new THREE.Group();scene.add(root);
+ const mat=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,metalness:.15,roughness:.5},o));
+ const box=(p,w,h,d,c,x,y,z,o)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c,o));m.position.set(x,y,z);p.add(m);return m};
+ const cyl=(p,r,h,c,x,y,z,o,seg)=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,seg||32),mat(c,o));m.position.set(x,y,z);p.add(m);return m};
+ const plat=cyl(root,7,.2,0xd2d3cf,0,0,0,{metalness:.15,roughness:.3},64);
+ const ring=new THREE.Mesh(new THREE.RingGeometry(6.55,6.8,64),new THREE.MeshBasicMaterial({color:0x2e9e4f,side:THREE.DoubleSide}));
+ ring.rotation.x=-Math.PI/2;ring.position.y=.11;root.add(ring);
+ const heatMat=mat(0x909395,{metalness:.15,roughness:.3});
+ const heatMat2=mat(0x9a9d9f,{metalness:.15,roughness:.3});
+
+ /* CNC */
+ const cnc=new THREE.Group();root.add(cnc);
+ const cBase=box(cnc,6,.8,4,0x8b8e90,0,.5,0);box(cnc,2.6,.6,1.8,0xeceeed,0,1.2,0,{metalness:.15,roughness:.5});
+ box(cnc,.55,4.7,.7,0x696c6f,-2.9,3.25,0);box(cnc,.55,4.7,.7,0x696c6f,2.9,3.25,0);box(cnc,6.4,.6,.9,0x7a7d80,0,5.3,0);
+ box(cnc,6.2,.08,.05,0xf59f00,0,5.3,.48,{emissive:0xf59f00,emissiveIntensity:1});box(cnc,.06,4.4,.05,0x1d2024,-2.9,3.25,.38,{emissive:0x1d2024,emissiveIntensity:.9});box(cnc,.06,4.4,.05,0x1d2024,2.9,3.25,.38,{emissive:0x1d2024,emissiveIntensity:.9});
+ const sp=new THREE.Group();cnc.add(sp);box(sp,1.3,.9,1.1,0x9a9d9f,0,4.55,0);
+ const housing=cyl(sp,.45,1.6,0x909395,0,3.2,0);housing.material=heatMat;
+ const bear=new THREE.Mesh(new THREE.TorusGeometry(.55,.07,12,40),new THREE.MeshBasicMaterial({color:0x2e9e4f}));
+ bear.rotation.x=Math.PI/2;bear.position.y=3;sp.add(bear);
+ cyl(sp,.25,.4,0xa4a7a9,0,2.2,0);
+ const tool=new THREE.Group();tool.position.y=1.75;sp.add(tool);box(tool,.05,.5,.28,0x3a3d40,0,0,0);box(tool,.28,.5,.05,0x3a3d40,0,0,0);
+
+ /* Printer */
+ const prn=new THREE.Group();root.add(prn);
+ const pBase=box(prn,5,.4,4,0x8b8e90,0,.3,0);box(prn,3.6,.15,3.2,0x9a9d9f,0,.6,0);
+ box(prn,.35,4,.35,0x696c6f,-2.3,2.5,0);box(prn,.35,4,.35,0x696c6f,2.3,2.5,0);
+ box(prn,.06,3.8,.05,0xf59f00,-2.3,2.5,.2,{emissive:0xf59f00,emissiveIntensity:1});box(prn,.06,3.8,.05,0x1d2024,2.3,2.5,.2,{emissive:0x1d2024,emissiveIntensity:1});
+ const beam=box(prn,4.9,.35,.35,0x7a7d80,0,2,0);
+ const obj=new THREE.Mesh(new THREE.BoxGeometry(1.4,1,1.2).translate(0,.5,0),mat(0xf59f00,{emissive:0x4a3000,emissiveIntensity:.4}));
+ obj.position.y=.675;prn.add(obj);
+ const hot=new THREE.Group();prn.add(hot);const hotBody=box(hot,.5,.6,.5,0x9a9d9f,0,.6,0);hotBody.material=heatMat2;
+ const noz=new THREE.Mesh(new THREE.ConeGeometry(.12,.3,12),mat(0x3a3d40));noz.rotation.x=Math.PI;noz.position.y=.15;hot.add(noz);
+
+ /* PC */
+ const pcg=new THREE.Group();root.add(pcg);pcg.visible=false;
+ const pcCase=box(pcg,2.6,4,3.4,0x8b8e90,0,2.2,0);pcCase.material=heatMat2;
+ box(pcg,2.3,3.6,.08,0x1d2024,0,2.2,1.72);box(pcg,.06,3.4,.05,0xf59f00,-1.05,2.2,1.77,{emissive:0xf59f00,emissiveIntensity:.8});
+ const fans=[0,1,2].map(k=>{const f=cyl(pcg,.55,.1,0x3a3d40,.2,1.1+k*1.15,1.8);f.rotation.x=Math.PI/2;box(f,1,.04,.16,0x16191c,0,.06,0);box(f,.16,.04,1,0x16191c,0,.06,0);return f});
+
+ /* sparks */
+ const NP=180,pp=new Float32Array(NP*3).fill(-99),pv=new Float32Array(NP*3),pla=new Float32Array(NP);
+ const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pp,3));
+ const pts=new THREE.Points(pg,new THREE.PointsMaterial({color:0xf97316,size:.14,transparent:true,opacity:.95,blending:THREE.NormalBlending,depthWrite:false}));
+ pts.frustumCulled=false;root.add(pts);
+ const emit=(x,y,z,n)=>{for(let i=0;i<NP&&n>0;i++)if(pla[i]<=0){pla[i]=.5+Math.random()*.5;pp[i*3]=x;pp[i*3+1]=y;pp[i*3+2]=z;pv[i*3]=rnd()*3;pv[i*3+1]=Math.random()*2.5+.5;pv[i*3+2]=rnd()*3;n--}};
+ const stepP=dt=>{for(let i=0;i<NP;i++)if(pla[i]>0){pla[i]-=dt;pv[i*3+1]-=9*dt;pp[i*3]+=pv[i*3]*dt;pp[i*3+1]+=pv[i*3+1]*dt;pp[i*3+2]+=pv[i*3+2]*dt;if(pla[i]<=0)pp[i*3+1]=-99}pg.attributes.position.needsUpdate=true};
+
+ /* camera + interaction */
+ let el=.38,dist=15,drag=false,px=0,py=0;
+ const size=()=>{const w=host.clientWidth||innerWidth,h=host.clientHeight||innerHeight;renderer.setSize(w,h);cam.aspect=w/h;cam.updateProjectionMatrix()};
+ size();addEventListener('resize',size);window.ResizeObserver&&new ResizeObserver(size).observe(host);
+ const cvs=renderer.domElement;
+ cvs.addEventListener('pointerdown',e=>{drag=true;px=e.clientX;py=e.clientY;cvs.setPointerCapture&&cvs.setPointerCapture(e.pointerId)});
+ cvs.addEventListener('pointermove',e=>{if(!drag)return;root.rotation.y+=(e.clientX-px)*.006;el=clamp(el+(e.clientY-py)*.004,.1,1.1);px=e.clientX;py=e.clientY});
+ const up=()=>{drag=false};cvs.addEventListener('pointerup',up);cvs.addEventListener('pointercancel',up);
+ cvs.addEventListener('wheel',e=>{e.preventDefault();dist=clamp(dist+e.deltaY*.01,9,24)},{passive:false});
+
+ const col=new THREE.Color(0x2e9e4f),tgt=new THREE.Color(),v=new THREE.Vector3(),L=[$('#lb1'),$('#lb2'),$('#lb3')];
+ let T=0,last=performance.now();
+ const label=(el_,anchor,dy,txt)=>{v.copy(anchor);v.y+=dy;v.project(cam);if(v.z>1){el_.style.display='none';return}el_.style.display='block';el_.textContent=txt;el_.style.transform=`translate(${((v.x*.5+.5)*host.clientWidth+16).toFixed(0)}px,${((-v.y*.5+.5)*host.clientHeight-14).toFixed(0)}px)`};
+ const wv=new THREE.Vector3(),wv2=new THREE.Vector3(),wv3=new THREE.Vector3();
+
+ function loop(now){
+  requestAnimationFrame(loop);
+  const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;
+  const d=S.cur[S.sel],tl=d?.telemetry||{},st=d?.health?.status||'NOMINAL',type=MACH.find(m=>m.id===S.sel).type;
+  const vib=tl.vibration_rms_mm_s??1,tp=tl.temperature_c??42,rpm=tl.spindle_rpm??4900,ld=tl.workload_pct??60,heat=clamp((tp-45)/45,0,1),crit=st==='CRITICAL'?1:st==='WARNING'?.4:0;
+  if(S.auto&&!drag)root.rotation.y+=dt*.18;
+  const cd=dist*Math.max(1,1.5/cam.aspect);cam.position.set(0,2.6+Math.sin(el)*cd,Math.cos(el)*cd);cam.lookAt(0,2.6,0);
+  tgt.set(HEX[st]||'#2E9E4F');col.lerp(tgt,.08);ring.material.color.copy(col);bear.material.color.copy(col);pl.color.copy(col);pl.intensity=1.3+crit*1.6*(.6+.4*Math.sin(T*8));
+  const hc=new THREE.Color().setHSL(.09-heat*.09,.04+heat*.8,.5);[heatMat,heatMat2].forEach(m=>{m.color.copy(hc);m.emissive.copy(hc);m.emissiveIntensity=heat*.55});
+  bear.scale.setScalar(1+crit*.12*Math.sin(T*9));
+  cnc.visible=type==='cnc';prn.visible=type==='prn';pcg.visible=type==='pc';
+  const m=type==='cnc'?cnc:type==='pc'?pcg:prn,sh=Math.sin(T*55)*vib*.012*(.4+crit);m.position.set(sh,0,Math.cos(T*47)*vib*.008*(.4+crit));
+  let ax,ay,az,baseM;
+  if(type==='cnc'){
+    sp.position.x=Math.sin(T*.7)*1.2;
+    tool.rotation.y+=rpm/60*dt*Math.PI*2*.06;
+    ax=sp.position.x;ay=1.5;az=0;
+    if(ld>40)emit(ax,ay,az,Math.floor(.3+crit*3+(ld>80?1:0)+Math.random()));
+    bear.getWorldPosition(wv);cBase.getWorldPosition(wv3);baseM=wv3;
+  }
+  else if(type==='pc'){
+    fans.forEach((f,k)=>f.rotation.y+=rpm/60*dt*Math.PI*2*.05*(1+k*.1));
+    fans[1].getWorldPosition(wv);pcCase.getWorldPosition(wv3);baseM=wv3;
+  }else{
+    const h=(T%16)/16*1.6+.05,nx=Math.sin(T*1.6)*1.1,ty=.675+h;
+    obj.scale.y=h;hot.position.set(nx,ty,0);beam.position.y=ty+1.3;
+    if(crit>.5)emit(nx,ty,0,2);
+    hotBody.getWorldPosition(wv);pBase.getWorldPosition(wv3);baseM=wv3;
+  }
+  stepP(dt);renderer.render(scene,cam);
+  label(L[0],wv,.2,`Vibration ${vib.toFixed(2)} mm/s`);
+  label(L[1],wv,1,`Temp ${tp.toFixed(1)} °C`);
+  label(L[2],baseM,.6,`Current ${(tl.motor_current_a??0).toFixed(2)} A`);
+ }
+ requestAnimationFrame(loop);
+}
+
+if(window.THREE){try{init3d()}catch(e){console.error("3D init error", e);$('#gl').innerHTML='<div class="msg">The 3D view could not start in this browser (WebGL is needed).</div>'}}
+else $('#gl').innerHTML='<div class="msg">The 3D library did not load. Connect to the internet and reload.</div>';
+
+function tickScore(){
+ S.hs=lerp(S.hs,S.cur[S.sel]?.health?.score??100,.12);
+ $('#hs').textContent=Math.round(S.hs);
+ requestAnimationFrame(tickScore);
+}
+
+/* events */
+let deb;
+$('#sl').oninput=e=>{
+ const v=+e.target.value;
+ S.ch[S.sel].i=v;
+ $('#iv').textContent=v+'%';
+ clearTimeout(deb);
+ deb=setTimeout(()=>inject(S.ch[S.sel].f,v),150);
+};
+
+$('#fs').onclick=e=>{
+ const f=e.target.dataset.f;
+ if(!f)return;
+ const c=S.ch[S.sel];
+ inject(f,c.i&&c.f===f?c.i:DEF[f]);
+};
+
+$('#rs').onclick=()=>inject(S.ch[S.sel].f,0);
+
+$('#tabs').onclick=e=>{
+ const b=e.target.closest('.tab');
+ if(!b||b.dataset.id===S.sel)return;
+ S.sel=b.dataset.id;
+ S.hs=S.cur[S.sel]?.health?.score??100;
+ $('#alert').className='';
+ sync();
+ hydrate();
+ ui();
+};
+
+$('#wo').onclick=wo;
+
+$('#so').onclick=async()=>{
+ (S.log[S.sel]??=[]).unshift(new Date().toLocaleString()+', signed off ('+(WORD[S.st[S.sel]]||'')+')');
+ toast('Sign-off recorded');
+ try{
+   await fetch(CFG.API+'/work-order/sign-off',{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({machine_id:S.sel,technician:'Lead Tech',notes:'Routine repair'})
+   });
+ }catch(_){}
+};
+
+$('#al').onclick=async()=>{
+ try{
+   const r=await fetch(CFG.API+'/alert/admin',{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({machine_id:S.sel})
+   });
+   if(!r.ok)throw new Error('HTTP '+r.status);
+   toast('Admin emergency email dispatched');
+ }catch(e){
+   console.error("Alert admin error:", e);
+   toast('Admin alert failed');
+ }
+};
+
+$('#dt').textContent=new Date().toLocaleDateString(undefined,{weekday:'short',month:'short',day:'2-digit'});
+$('#mute').onclick=e=>{S.muted=!S.muted;e.target.textContent=S.muted?'Sound off':'Sound on'};
+$('#rot').onclick=e=>{S.auto=!S.auto;e.target.textContent=S.auto?'Auto-rotate on':'Auto-rotate off'};
+
+setInterval(()=>{S.fps=S.cnt;S.cnt=0},1000);
+setInterval(ui,100);
+sync();
+connect();
+requestAnimationFrame(tickScore);
+</script></body></html>

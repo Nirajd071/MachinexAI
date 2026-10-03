@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, Clock3, Cpu } from 'lucide-react';
-import { Toaster, toast } from 'sonner';
 import { useCockpit } from './hooks/useCockpit';
 import { Header } from './components/Header';
 import { FleetBar } from './components/FleetBar';
@@ -10,6 +8,7 @@ import { AiScores } from './components/AiScores';
 import { RulCard } from './components/RulCard';
 import { TelemetryCharts } from './components/TelemetryCharts';
 import { XaiPanel } from './components/XaiPanel';
+import { ThreeDigitalTwin } from './components/ThreeDigitalTwin';
 import { MaintenanceTable } from './components/MaintenanceTable';
 import { ActionPanel } from './components/ActionPanel';
 import { AlertBanner } from './components/AlertBanner';
@@ -17,88 +16,109 @@ import type { HealthStatus } from './types';
 
 function playAlert() {
   try {
-    const AudioContextClass = window.AudioContext;
-    if (!AudioContextClass) return;
-    const context = new AudioContextClass();
-    [880, 587].forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = frequency;
-      gain.gain.setValueAtTime(0.0001, context.currentTime + index * 0.22);
-      gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + index * 0.22 + 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + index * 0.22 + 0.19);
-      oscillator.connect(gain); gain.connect(context.destination);
-      oscillator.start(context.currentTime + index * 0.22);
-      oscillator.stop(context.currentTime + index * 0.22 + 0.2);
+    const ctx = new AudioContext();
+    [880, 660].forEach((f, k) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      const s = ctx.currentTime + k * .25;
+      g.gain.setValueAtTime(.15, s);
+      g.gain.exponentialRampToValueAtTime(.001, s + .22);
+      o.start(s); o.stop(s + .25);
     });
-    window.setTimeout(() => void context.close(), 700);
-  } catch { /* Audio is optional; the visual alert remains authoritative. */ }
+  } catch {}
 }
 
 function Home() {
   const cockpit = useCockpit();
-  const { machines, selectedId, chooseMachine, selected, tick, history, buffers, maintenance, mockMode, socket, fault, setFault, intensity, setSlider, preset, latency } = cockpit;
-  const { loadError, retry } = cockpit;
+  const { machines, selectedId, chooseMachine, selected, tick, history, buffers, maintenance, mockMode, setMockMode, socket, fault, setFault, intensity, setSlider, preset, latency, signOff, loadError, retry } = cockpit;
   const [muted, setMuted] = useState(false);
-  const [resolved, setResolved] = useState(false);
-  const previousStatus = useRef<HealthStatus | null>(null);
-  const previousMachine = useRef(selectedId);
+  const [autoRotate, setAutoRotate] = useState(true);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
+  const prevStatus = useRef<HealthStatus | null>(null);
+  const prevMachine = useRef(selectedId);
   const status = tick?.health.status ?? 'NOMINAL';
   const critical = status === 'CRITICAL';
+  const warning = status === 'WARNING';
+
+  const notify = (msg: string) => {
+    setToastMsg(msg);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToastMsg(null), 2500);
+  };
+
   useEffect(() => {
-    const prev = previousStatus.current;
-    if (previousMachine.current !== selectedId) {
-      previousMachine.current = selectedId;
-      previousStatus.current = status;
-      setResolved(false);
-      return undefined;
-    }
-    if (prev !== null && prev !== 'CRITICAL' && status === 'CRITICAL') {
-      setResolved(false);
-      if (!muted) playAlert();
-      toast.error('Critical machine condition detected.');
-    }
-    if (prev !== null && prev !== 'NOMINAL' && status === 'NOMINAL') {
-      setResolved(true);
-      toast.success('Resolved · machine returned to nominal operation.');
-      const id = window.setTimeout(() => setResolved(false), 5000);
-      previousStatus.current = status;
-      return () => window.clearTimeout(id);
-    }
-    previousStatus.current = status;
-    return undefined;
+    document.body.setAttribute('data-s', status);
+    const prev = prevStatus.current;
+    if (prevMachine.current !== selectedId) { prevMachine.current = selectedId; prevStatus.current = status; return; }
+    if (prev && prev !== 'CRITICAL' && status === 'CRITICAL' && !muted) playAlert();
+    prevStatus.current = status;
   }, [status, muted, selectedId]);
 
-  return <div className="grid-bg min-h-[100dvh]">
-    <Header state={socket.state} fps={socket.fps} mock={mockMode} latency={latency} muted={muted} onMute={() => setMuted(value => !value)}/>
-    <main className="mx-auto max-w-[1920px] px-3 pb-6 pt-3 md:px-5 lg:px-6">
-      <div className="mb-2 flex items-center justify-between"><div className="flex items-center gap-2"><span className="panel-title">FLEET OVERVIEW</span><span className="h-px w-8 bg-[#27354a]"/></div><div className="mono flex items-center gap-2 text-[9px] text-slate-600"><Clock3 size={11}/> {new Date().toLocaleDateString(undefined,{weekday:'short',month:'short',day:'2-digit'})} <span className="text-slate-700">/</span> MULTI-MACHINE TELEMETRY</div></div>
-      <FleetBar machines={machines} ticks={buffers} selectedId={selectedId} onSelect={chooseMachine}/>
-      {machines.length === 0 && (loadError ? <div role="alert" data-testid="alert-gateway-error" className="panel mt-2 flex flex-wrap items-center justify-between gap-3 border-amber-500/25 p-4 text-[10px] text-amber-200"><span>Gateway fleet data unavailable: {loadError}</span><button data-testid="button-retry-gateway" onClick={retry} className="rounded border border-amber-500/30 px-3 py-1.5 text-amber-200 hover:bg-amber-500/10">Retry connection</button></div> : <div className="panel mt-2 animate-pulse p-4 text-[10px] text-slate-500">Hydrating machine fleet from gateway…</div>)}
-      <div className="mt-3 grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(265px,0.94fr)_minmax(405px,1.38fr)_minmax(275px,0.98fr)]">
-        <div className="space-y-2.5">
-          <ChaosPanel fault={fault} setFault={setFault} intensity={intensity} setIntensity={setSlider} preset={preset} activeFault={tick?.chaos?.fault_type ?? null}/>
-          <HealthGauge tick={tick}/>
-          <AiScores history={history} tick={tick}/>
-          <RulCard tick={tick}/>
-        </div>
-        <div className="min-w-0">
-          <div className="mb-2 flex items-center justify-between"><div className="flex items-center gap-2"><Activity size={13} className="text-sky-400"/><span className="panel-title">LIVE MULTI-TRACE TELEMETRY</span></div><div className="flex items-center gap-1.5 font-mono text-[9px] text-slate-600"><span className={`status-dot ${critical?'critical':'nominal'}`}/>{selected?.machine_id ?? selectedId} · 60 SEC</div></div>
-          <TelemetryCharts history={history} tick={tick}/>
-        </div>
-        <div className="space-y-2.5">
-          <AlertBanner critical={critical} resolved={resolved} fault={tick?.diagnostics?.probable_fault ?? null}/>
-          <XaiPanel tick={tick}/>
-          <MaintenanceTable rows={maintenance} tick={tick}/>
-          {selected && <ActionPanel machineId={selected.machine_id} status={status} critical={critical} mock={mockMode} tick={tick}/>}
-          <div className="flex items-center gap-2 px-1 pt-0.5 text-[9px] text-slate-600"><Cpu size={11}/> {mockMode?'Local physics simulator · 20 Hz':'FastAPI telemetry gateway'} <span className="ml-auto mono">{history.length} samples</span></div>
-        </div>
+  const tl = tick?.telemetry;
+  const buf = history;
+  const rp = buf.slice(-100).map(t => t.telemetry?.spindle_rpm ?? 0);
+  const mu = rp.reduce((a, b) => a + b, 0) / (rp.length || 1);
+  const cv = mu ? Math.sqrt(rp.reduce((a, b) => a + (b - mu) ** 2, 0) / rp.length) / mu : 0;
+
+  return <div className="app">
+    <Header state={socket.state} fps={socket.fps} mock={mockMode} latency={latency} muted={muted}
+      onMute={() => setMuted(v => !v)} autoRotate={autoRotate} onToggleRotate={() => setAutoRotate(v => !v)} />
+
+    {loadError && <div className="gateway-error" role="alert">
+      Live gateway unavailable: {loadError}. Telemetry was cleared. <button onClick={retry}>Retry</button>
+    </div>}
+
+    <FleetBar machines={machines} ticks={buffers} selectedId={selectedId} onSelect={chooseMachine} />
+
+    {/* LEFT COLUMN */}
+    <aside className="col L">
+      <ChaosPanel machineId={selected?.machine_id ?? selectedId} fault={fault} setFault={setFault} intensity={intensity} setIntensity={setSlider}
+        preset={preset} activeFault={tick?.chaos?.fault_type ?? null} />
+      <HealthGauge tick={tick} />
+      <AiScores history={history} tick={tick} />
+      <RulCard tick={tick} />
+    </aside>
+
+    {/* CENTER */}
+    <div className="mid">
+      <main className="stage">
+        <ThreeDigitalTwin machineId={selected?.machine_id ?? selectedId} tick={tick} autoRotate={autoRotate} />
+        <AlertBanner critical={critical} warning={warning} fault={tick?.diagnostics?.probable_fault ?? null} />
+        <div className="hint">Drag to rotate, scroll to zoom</div>
+      </main>
+      <TelemetryCharts history={history} tick={tick} />
+      <div className="metrics">
+        <div>Workload ratio<b className="num">{(tl?.workload_pct ?? 0).toFixed(1)}%</b>
+          <div className="mt"><i style={{ background: 'var(--ink)', width: `${tl?.workload_pct ?? 0}%` }} /></div></div>
+        <div>Operating hours<b className="num">{(tl?.operating_hours ?? 0).toFixed(1)} hrs</b></div>
+        <div>Service age<b className="num">{Math.round(tl?.service_age_hrs ?? 0)} hrs</b></div>
+        <div>RPM volatility<b className="num">{cv.toFixed(3)}</b></div>
+        <div>{mockMode ? 'Simulated telemetry gateway' : `Gateway localhost:8000`}, {buf.length} samples</div>
       </div>
-    </main>
-    <Toaster theme="dark" position="bottom-right" toastOptions={{style:{background:'#111a2a',border:'1px solid #29374c',color:'#dce5f1'}}}/>
+    </div>
+
+    {/* RIGHT COLUMN */}
+    <aside className="col R">
+      <section className="blk">
+        <div className="sg">
+          {[
+            { id: 'vib', l: 'Vibration mm/s', v: tl?.vibration_rms_mm_s, d: 2 },
+            { id: 'tmp', l: 'Temperature °C', v: tl?.temperature_c, d: 1 },
+            { id: 'cur', l: 'Motor current A', v: tl?.motor_current_a, d: 2 },
+            { id: 'rpm', l: 'Spindle speed rpm', v: tl?.spindle_rpm, d: 0 },
+          ].map(s => <div key={s.id}><b className="num">{(s.v ?? 0).toFixed(s.d)}</b><span>{s.l}</span></div>)}
+        </div>
+      </section>
+      <XaiPanel tick={tick} />
+      <MaintenanceTable tick={tick} />
+      <ActionPanel machineId={selected?.machine_id ?? selectedId} status={status} critical={critical}
+        mock={mockMode} tick={tick} onSignOff={signOff} onNotify={notify} />
+    </aside>
+
+    {/* INDUSTRIAL FLOATING TOAST */}
+    <div id="toast" className={toastMsg ? 'show' : ''} role="status">{toastMsg}</div>
   </div>;
 }
 
-function App() { return <Home/>; }
-export default App;
+export default function App() { return <Home />; }

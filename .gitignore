@@ -47,3 +47,26 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Environment files & Secrets
+.env
+.env.*
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# SQLite databases & logs
+*.db
+*.sqlite3
+*.sqlite
+*.log
+backend/*.db
+backend/ipm_mfds.db
+backend/telemetry_audit.db
+backend/node_modules/

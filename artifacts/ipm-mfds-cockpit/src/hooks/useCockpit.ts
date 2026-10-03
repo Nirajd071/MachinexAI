@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getHistory, getMachines, getMaintenance, injectChaos, USE_MOCK } from '../api';
+import { getHistory, getMachines, getMaintenance, injectChaos, signOffWorkOrder, USE_MOCK } from '../api';
 import { mockTick, seedTicks } from '../mockEngine';
+import { MACHINE_SEEDS } from '../types';
 import type { FaultType, Machine, Maintenance, Tick } from '../types';
 import { useTelemetrySocket } from './useTelemetrySocket';
 import { toast } from 'sonner';
 const MAX = 1200;
 export function useCockpit() {
-  const [machines, setMachines] = useState<Machine[]>([]);
-  const [selectedId, setSelectedId] = useState('CNC-01');
+  const [machines, setMachines] = useState<Machine[]>(MACHINE_SEEDS);
+  const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get('machine') || 'CNC-01');
   const [buffers, setBuffers] = useState<Record<string, Tick[]>>({});
   const [maintenance, setMaintenance] = useState<Maintenance[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -50,6 +51,8 @@ export function useCockpit() {
         setMachines(list);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'request failed';
+        liveBuffer.current = {};
+        setBuffers({});
         setLoadError(message);
         toast.error(`Gateway unavailable: ${message}`);
       }
@@ -84,10 +87,13 @@ export function useCockpit() {
   }, [mockMode, machines, handleTick]);
   useEffect(() => {
     if (mockMode) return;
-    const fallback = window.setTimeout(() => {
-      if (socket.state !== 'LIVE') { setMockMode(true); toast.warning('Gateway unavailable — switched to MOCK DATA'); }
-    }, 3000);
-    return () => window.clearTimeout(fallback);
+    if (socket.state === 'LIVE') return;
+    const advisory = window.setTimeout(() => {
+      if (socket.state !== 'LIVE') {
+        toast.info('Connecting to live gateway (ws://localhost:8000)...');
+      }
+    }, 5000);
+    return () => window.clearTimeout(advisory);
   }, [mockMode, socket.state]);
   useEffect(() => {
     if (mockMode) { setMaintenance([{ date: new Date(Date.now() - 12 * 86400000).toISOString(), action: 'Spindle inspection & lubrication', technician: 'M. Alvarez', part: 'SKF 6205-2RSH bearing' }, { date: new Date(Date.now() - 44 * 86400000).toISOString(), action: 'Coolant filtration service', technician: 'J. Chen', part: 'Coolant filter cartridge' }]); return; }
@@ -114,6 +120,35 @@ export function useCockpit() {
   };
   const chooseMachine = (id: string) => { setSelectedId(id); setIntensity(faultRef.current[id]?.intensity ?? 0); };
   const renderedHistory = useMemo(() => history.filter(item => Date.now() - Date.parse(item.timestamp) <= 60000), [history]);
-  return { machines, selectedId, chooseMachine, selected, tick, history: renderedHistory, buffers, maintenance, mockMode, setMockMode, socket, fault, setFault, intensity, setSlider, preset, latency, loadError, retry: () => setReloadKey(key => key + 1) };
+
+  const signOff = useCallback(async (technician: string, notes: string, part: string) => {
+    if (mockMode) {
+      const newRecord: Maintenance = {
+        date: new Date().toISOString(),
+        action: notes,
+        technician,
+        part
+      };
+      setMaintenance(curr => [newRecord, ...curr]);
+      preset(null, 0);
+      return;
+    }
+    await signOffWorkOrder({
+      machine_id: selectedId,
+      technician,
+      notes,
+      part_replaced: part
+    });
+    setIntensity(0);
+    preset(null, 0);
+    try {
+      const updated = await getMaintenance(selectedId);
+      setMaintenance(updated);
+    } catch {
+      // Keep existing records if refresh fails
+    }
+  }, [mockMode, selectedId, preset]);
+
+  return { machines, selectedId, chooseMachine, selected, tick, history: renderedHistory, buffers, maintenance, mockMode, setMockMode, socket, fault, setFault, intensity, setSlider, preset, latency, loadError, retry: () => setReloadKey(key => key + 1), signOff };
 }
 import { MACHINE_SEEDS as MACHINE_FALLBACK } from '../types';

@@ -1,32 +1,397 @@
-import { Activity, Gauge, Thermometer, Zap } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { memo } from 'react';
-import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import React, { memo } from 'react';
 import type { Tick } from '../types';
-const tooltipStyle = { backgroundColor:'#111a2a', border:'1px solid #2a3850', borderRadius:4, color:'#dce5f1', fontSize:10 };
-function ChartCard({ title, icon, children, legend }: { title:string; icon:ReactNode; children:ReactNode; legend:ReactNode }) {
-  return <section className="panel min-w-0 p-3"><div className="mb-2 flex items-center justify-between"><div className="flex items-center gap-2 text-[10px] font-semibold text-slate-300">{icon}{title}</div><div className="flex gap-3">{legend}</div></div>{children}</section>;
+
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+
+function pathOf(v: number[], w: number, h: number): string {
+  if (v.length < 2) return '';
+  return v.map((q, i) => {
+    const x = (i / (v.length - 1)) * w;
+    const y = h - clamp(q, 0, 1) * (h - 10) - 5;
+    return (i ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }).join('');
 }
-const Leg = ({ color, label, dashed=false }: {color:string;label:string;dashed?:boolean}) => <span className="flex items-center gap-1 text-[8px] text-slate-500"><i className="inline-block w-3 border-t" style={{borderColor:color,borderStyle:dashed?'dashed':'solid'}}/>{label}</span>;
-const chartProps = { margin:{top:2,right:4,bottom:0,left:-17} };
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  return <div style={tooltipStyle} className="px-2 py-1.5"><div className="mb-1 text-slate-500">{new Date(label).toLocaleTimeString()}</div>{payload.map((p:any)=><div key={p.dataKey} style={{color:p.color}}>{p.name}: {Number(p.value).toFixed(2)}</div>)}</div>;
+
+function areaOf(v: number[], w: number, h: number): string {
+  if (v.length < 2) return '';
+  const p = pathOf(v, w, h);
+  return `${p} L${w} ${h} L0 ${h} Z`;
 }
-export const TelemetryCharts = memo(function TelemetryCharts({ history, tick }: { history: Tick[]; tick?: Tick }) {
-  const danger = tick?.health.status === 'CRITICAL'; const primary = danger ? '#EF4444' : '#38BDF8';
-  const data = history.map(t=>({time:Date.parse(t.timestamp), vibration:t.telemetry.vibration_rms_mm_s, crest:t.telemetry.vibration_crest_factor, temp:t.telemetry.temperature_c, rate:t.telemetry.temp_rate_c_per_min, current:t.telemetry.motor_current_a, rpm:t.telemetry.spindle_rpm, volatility:t.telemetry.rpm_volatility}));
-  const latest = tick?.telemetry;
-  return <div className="space-y-2" data-testid="panel-telemetry">
-    <ChartCard title="Vibration · ISO 10816-3" icon={<Activity size={13} className={danger?'text-red-400':'text-sky-400'}/>} legend={<><Leg color={primary} label="RMS mm/s"/><Leg color="#8B5CF6" label="Crest factor"/><Leg color="#F59E0B" label="ISO threshold" dashed/></>}>
-      <ResponsiveContainer width="100%" height={115}><LineChart data={data} {...chartProps}><CartesianGrid stroke="#1c293b" strokeDasharray="2 4" vertical={false}/><XAxis dataKey="time" type="number" domain={['dataMin','dataMax']} tickFormatter={(v)=>new Date(v).toLocaleTimeString([],{minute:'2-digit',second:'2-digit'})} tick={{fill:'#627188',fontSize:8,fontFamily:'DM Mono'}} axisLine={false} tickLine={false} minTickGap={36}/><YAxis yAxisId="left" tick={{fill:'#627188',fontSize:8}} axisLine={false} tickLine={false} width={31}/><YAxis yAxisId="right" orientation="right" tick={{fill:'#627188',fontSize:8}} axisLine={false} tickLine={false} width={27}/><Tooltip content={<ChartTooltip/>}/><ReferenceLine yAxisId="left" y={2.8} stroke="#F59E0B" strokeDasharray="4 4"/><ReferenceLine yAxisId="left" y={4.5} stroke="#EF4444" strokeDasharray="4 4"/><Line yAxisId="left" dataKey="vibration" name="RMS" stroke={primary} dot={false} strokeWidth={1.8} isAnimationActive={false}/><Line yAxisId="right" dataKey="crest" name="Crest" stroke="#8B5CF6" dot={false} strokeWidth={1.3} isAnimationActive={false}/></LineChart></ResponsiveContainer>
-    </ChartCard>
-    <ChartCard title="Thermal · temperature + dT/dt" icon={<Thermometer size={13} className={danger?'text-red-400':'text-amber-400'}/>} legend={<><Leg color={danger?'#EF4444':'#F59E0B'} label="°C"/><Leg color="#38BDF8" label="dT/dt °C/min"/></>}>
-      <ResponsiveContainer width="100%" height={105}><LineChart data={data} {...chartProps}><CartesianGrid stroke="#1c293b" strokeDasharray="2 4" vertical={false}/><XAxis dataKey="time" type="number" domain={['dataMin','dataMax']} tickFormatter={(v)=>new Date(v).toLocaleTimeString([],{minute:'2-digit',second:'2-digit'})} tick={{fill:'#627188',fontSize:8,fontFamily:'DM Mono'}} axisLine={false} tickLine={false} minTickGap={36}/><YAxis yAxisId="left" tick={{fill:'#627188',fontSize:8}} axisLine={false} tickLine={false} width={31}/><YAxis yAxisId="right" orientation="right" tick={{fill:'#627188',fontSize:8}} axisLine={false} tickLine={false} width={27}/><Tooltip content={<ChartTooltip/>}/><Line yAxisId="left" dataKey="temp" name="Temperature °C" stroke={danger?'#EF4444':'#F59E0B'} dot={false} strokeWidth={1.8} isAnimationActive={false}/><Line yAxisId="right" dataKey="rate" name="dT/dt" stroke="#38BDF8" dot={false} strokeWidth={1.3} isAnimationActive={false}/></LineChart></ResponsiveContainer>
-    </ChartCard>
-    <ChartCard title="Power & Drive · current + RPM" icon={<Zap size={13} className={danger?'text-red-400':'text-emerald-400'}/>} legend={<><Leg color={primary} label="A"/><Leg color="#10B981" label="RPM"/></>}>
-      <ResponsiveContainer width="100%" height={105}><LineChart data={data} {...chartProps}><CartesianGrid stroke="#1c293b" strokeDasharray="2 4" vertical={false}/><XAxis dataKey="time" type="number" domain={['dataMin','dataMax']} tickFormatter={(v)=>new Date(v).toLocaleTimeString([],{minute:'2-digit',second:'2-digit'})} tick={{fill:'#627188',fontSize:8,fontFamily:'DM Mono'}} axisLine={false} tickLine={false} minTickGap={36}/><YAxis yAxisId="left" tick={{fill:'#627188',fontSize:8}} axisLine={false} tickLine={false} width={31}/><YAxis yAxisId="right" orientation="right" tick={{fill:'#627188',fontSize:8}} axisLine={false} tickLine={false} width={33}/><Tooltip content={<ChartTooltip/>}/><Line yAxisId="left" dataKey="current" name="Current A" stroke={primary} dot={false} strokeWidth={1.8} isAnimationActive={false}/><Line yAxisId="right" dataKey="rpm" name="Spindle RPM" stroke="#10B981" dot={false} strokeWidth={1.3} isAnimationActive={false}/></LineChart></ResponsiveContainer>
-    </ChartCard>
-    <section className="panel flex flex-wrap items-center gap-x-5 gap-y-3 px-3 py-2.5"><div className="min-w-[170px] flex-1"><div className="mb-1.5 flex justify-between text-[9px]"><span className="flex items-center gap-1 text-slate-400"><Gauge size={12}/> WORKLOAD RATIO</span><span data-testid="text-workload" className="mono text-slate-200">{latest?.workload_pct.toFixed(1) ?? '—'}%</span></div><div className="h-1.5 overflow-hidden rounded bg-[#1b2637]"><div className="h-full rounded bg-sky-400 transition-all" style={{width:`${latest?.workload_pct ?? 0}%`}}/></div></div><div className="border-l border-[#253147] pl-4"><div className="panel-title text-[8px]">OPERATING HOURS</div><div data-testid="text-operating-hours" className="mono mt-1 text-[12px] text-slate-200">{latest?.operating_hours.toLocaleString(undefined,{maximumFractionDigits:1}) ?? '—'} <small className="text-slate-500">hrs</small></div></div><div className="border-l border-[#253147] pl-4"><div className="panel-title text-[8px]">SERVICE AGE</div><div data-testid="text-service-age" className="mono mt-1 text-[12px] text-slate-200">{latest?.service_age_hrs.toFixed(0) ?? '—'} <small className="text-slate-500">hrs</small></div></div><div className="border-l border-[#253147] pl-4"><div className="panel-title text-[8px]">RPM VOLATILITY</div><div className="mono mt-1 text-[12px] text-sky-300">{latest?.rpm_volatility.toFixed(3) ?? '—'}</div></div></section>
-  </div>;
+
+interface Threshold {
+  normY: number;
+  label: string;
+  color: string;
+  bg: string;
+  border: string;
+  dash?: string;
+}
+
+interface LineDef {
+  v: number[];
+  color: string;
+  width?: number;
+  dash?: string;
+  area?: boolean;
+  dot?: boolean;
+}
+
+function WaveformPlot({
+  id,
+  lines,
+  thresholds,
+  w = 300,
+  h = 100
+}: {
+  id: string;
+  lines: LineDef[];
+  thresholds: Threshold[];
+  w?: number;
+  h?: number;
+}) {
+  const elements: React.ReactNode[] = [];
+  const gradDefs: React.ReactNode[] = [];
+
+  // Area gradients
+  lines.forEach((l, idx) => {
+    if (l.area) {
+      gradDefs.push(
+        <linearGradient key={`grad-${id}-${idx}`} id={`grad-${id}-${idx}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={l.color} stopOpacity="0.24" />
+          <stop offset="65%" stopColor={l.color} stopOpacity="0.06" />
+          <stop offset="100%" stopColor={l.color} stopOpacity="0.00" />
+        </linearGradient>
+      );
+    }
+  });
+
+  // Background subtle horizontal grid rules
+  elements.push(
+    <line key="g-25" x1="0" y1={(h * 0.25).toFixed(1)} x2={w} y2={(h * 0.25).toFixed(1)} stroke="#E2E8F0" strokeWidth="0.8" strokeDasharray="3 3" />,
+    <line key="g-50" x1="0" y1={(h * 0.50).toFixed(1)} x2={w} y2={(h * 0.50).toFixed(1)} stroke="#CBD5E1" strokeWidth="0.8" strokeDasharray="3 3" />,
+    <line key="g-75" x1="0" y1={(h * 0.75).toFixed(1)} x2={w} y2={(h * 0.75).toFixed(1)} stroke="#E2E8F0" strokeWidth="0.8" strokeDasharray="3 3" />
+  );
+
+  // Shaded area fills
+  lines.forEach((l, idx) => {
+    if (l.area && l.v.length >= 2) {
+      elements.push(
+        <path key={`area-${idx}`} d={areaOf(l.v, w, h)} fill={`url(#grad-${id}-${idx})`} />
+      );
+    }
+  });
+
+  // Threshold guide lines (lines only, NO distorted text in SVG!)
+  thresholds.forEach((th, idx) => {
+    const yPos = h - clamp(th.normY, 0, 1) * (h - 10) - 5;
+    elements.push(
+      <line
+        key={`th-${idx}`}
+        x1="0"
+        y1={yPos.toFixed(1)}
+        x2={w}
+        y2={yPos.toFixed(1)}
+        stroke={th.color}
+        strokeDasharray={th.dash || "4 3"}
+        strokeWidth="1.2"
+        vectorEffect="non-scaling-stroke"
+      />
+    );
+  });
+
+  // Data paths
+  lines.forEach((l, idx) => {
+    if (l.v.length >= 2) {
+      elements.push(
+        <path
+          key={`ln-${idx}`}
+          d={pathOf(l.v, w, h)}
+          stroke={l.color}
+          strokeDasharray={l.dash || undefined}
+          fill="none"
+          strokeWidth={l.width || 2.2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      );
+
+      // Latest head point pulse beacon
+      if (l.dot && l.v.length > 0) {
+        const lastY = h - clamp(l.v[l.v.length - 1], 0, 1) * (h - 10) - 5;
+        const cx = w - 4;
+        elements.push(
+          <g key={`dt-${idx}`}>
+            <circle cx={cx} cy={lastY.toFixed(1)} r="7" fill={l.color} opacity="0.25">
+              <animate attributeName="r" values="3.5;8;3.5" dur="1.4s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.4;0.05;0.4" dur="1.4s" repeatCount="indefinite" />
+            </circle>
+            <circle cx={cx} cy={lastY.toFixed(1)} r="3.2" fill={l.color} stroke="#ffffff" strokeWidth="1.2" />
+          </g>
+        );
+      }
+    }
+  });
+
+  return (
+    <div className="ch-plot">
+      <svg className="ch-svg" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+        <defs>{gradDefs}</defs>
+        {elements}
+      </svg>
+
+      {/* Pure Typography Threshold Labels (No boxes/blocks) */}
+      {thresholds.map((th, idx) => {
+        // SVG coordinate: yPos = h - clamp(th.normY, 0, 1) * (h - 10) - 5
+        const norm = clamp(th.normY, 0, 1);
+        const yPos = h - norm * (h - 10) - 5;
+        const topPct = (yPos / h) * 100;
+        return (
+          <div
+            key={`th-lbl-${idx}`}
+            className="th-label"
+            style={{
+              position: 'absolute',
+              right: '8px',
+              top: `${topPct}%`,
+              transform: 'translateY(-100%)',
+              paddingBottom: '3px',
+              color: th.color,
+            }}
+          >
+            {th.label}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export const TelemetryCharts = memo(function TelemetryCharts({
+  history,
+  tick
+}: {
+  history: Tick[];
+  tick?: Tick;
+}) {
+  const tl = tick?.telemetry;
+  const tt = history.slice(-140);
+
+  const nz = (a: number[], lo: number, hi: number) => a.map(x => clamp((x - lo) / (hi - lo || 1e-5), 0, 1));
+  const yy = (v: number, lo: number, hi: number) => (v - lo) / (hi - lo || 1e-5);
+  const g = (f: string) => tt.map(t => (t.telemetry as any)?.[f] ?? 0);
+
+  // 1. Vibration Dynamics (ISO 10816-3 Severity Zones)
+  const v_rms = g('vibration_rms_mm_s');
+  const v_cf = g('vibration_crest_factor');
+  const max_v = Math.max(3.2, ...v_rms);
+  const hi_v = Math.max(5.5, max_v * 1.15);
+  const curV = tl?.vibration_rms_mm_s ?? 0;
+  const curCF = tl?.vibration_crest_factor ?? 0;
+  const vibColor = curV > 4.5 ? '#D32F2F' : curV > 2.8 ? '#E0A100' : '#2E9E4F';
+  const vibPill = curV > 4.5 ? { c: 'crit', l: 'Zone D (Danger)' } : curV > 2.8 ? { c: 'warn', l: 'Zone C (Alert)' } : curV > 1.8 ? { c: 'warn', l: 'Zone B (Acceptable)' } : { c: 'ok', l: 'Zone A (Good)' };
+
+  // 2. Thermal Dynamics & Gradient
+  const t_c = g('temperature_c');
+  const t_r = g('temp_rate_c_per_min');
+  const min_t = Math.min(...(t_c.length ? t_c : [40]));
+  const max_t = Math.max(...(t_c.length ? t_c : [65]));
+  const lo_t = Math.min(25, Math.floor(min_t - 5));
+  const hi_t = Math.max(90, Math.ceil(max_t + 8));
+  const curT = tl?.temperature_c ?? 0;
+  const curTR = tl?.temp_rate_c_per_min ?? 0;
+  const isPc = tick?.machine_id === 'PC-01';
+  const warn_t = isPc ? 70 : 68;
+  const crit_t = isPc ? 82 : 78;
+  const thermColor = curT >= crit_t ? '#D32F2F' : curT >= warn_t ? '#E0A100' : '#16191C';
+  const thermPill = curT >= crit_t ? { c: 'crit', l: 'Critical Overheat' } : curT >= warn_t ? { c: 'warn', l: 'Thermal Warning' } : { c: 'ok', l: 'Nominal Temp' };
+
+  // 3. Power, Current & Spindle Drive
+  const c_a = g('motor_current_a');
+  const rpms = g('spindle_rpm');
+  const max_c = Math.max(6.5, ...c_a);
+  const hi_c = Math.max(9.0, max_c * 1.18);
+  const max_rpm = Math.max(5000, ...rpms);
+  const curC = tl?.motor_current_a ?? 0;
+  const curRPM = Math.round(tl?.spindle_rpm ?? 0);
+  const curColor = curC > 7.5 ? '#D32F2F' : curC > 6.0 ? '#E0A100' : '#16191C';
+  const powerPill = curC > 7.5 ? { c: 'crit', l: 'Overcurrent Trip' } : curC > 6.0 ? { c: 'warn', l: 'High Workload' } : { c: 'ok', l: 'Stable Drive' };
+
+  return (
+    <div className="charts">
+      {/* ── CARD 1: VIBRATION ── */}
+      <div className="ch">
+        <div className="ch-head">
+          <div className="ch-top">
+            <span className="ch-name">Vibration (ISO 10816-3)</span>
+            <span className={`ch-pill ${vibPill.c}`}>{vibPill.l}</span>
+          </div>
+          <div className="ch-val-row">
+            <div className="ch-main" style={{ color: vibColor }}>
+              {curV.toFixed(2)} <span className="ch-unit">mm/s</span>
+            </div>
+            <div className="ch-sub">
+              Crest Factor: <b>{curCF.toFixed(1)}</b>
+            </div>
+          </div>
+        </div>
+
+        <div className="ch-body">
+          <div className="ch-yaxis">
+            <span>{hi_v.toFixed(1)}</span>
+            <span>{(hi_v * 0.5).toFixed(1)}</span>
+            <span>0.0</span>
+          </div>
+
+          <WaveformPlot
+            id="c1"
+            w={300}
+            h={100}
+            lines={[
+              { v: nz(v_rms, 0, hi_v), color: vibColor, width: 2.2, dot: true, area: true }
+            ]}
+            thresholds={[
+              {
+                normY: yy(4.5, 0, hi_v),
+                label: '4.5 mm/s ISO-C Limit',
+                color: '#D32F2F',
+                bg: 'rgba(254, 242, 242, 0.95)',
+                border: '#F87171',
+                dash: '4 3'
+              },
+              {
+                normY: yy(1.8, 0, hi_v),
+                label: '1.8 Good (Zone A)',
+                color: '#15803D',
+                bg: 'rgba(240, 253, 244, 0.95)',
+                border: '#86EFAC',
+                dash: '3 3'
+              }
+            ]}
+          />
+        </div>
+
+        <div className="ch-foot">
+          <span>ISO 10816-3 Class II Rigid</span>
+          <span>140 pts · 10 Hz Real-Time</span>
+        </div>
+      </div>
+
+      {/* ── CARD 2: THERMAL DYNAMICS ── */}
+      <div className="ch">
+        <div className="ch-head">
+          <div className="ch-top">
+            <span className="ch-name">Thermal Dynamics</span>
+            <span className={`ch-pill ${thermPill.c}`}>{thermPill.l}</span>
+          </div>
+          <div className="ch-val-row">
+            <div className="ch-main" style={{ color: thermColor }}>
+              {curT.toFixed(1)} <span className="ch-unit">°C</span>
+            </div>
+            <div className="ch-sub">
+              Gradient: <b>{curTR >= 0 ? '+' : ''}{curTR.toFixed(2)} °C/m</b>
+            </div>
+          </div>
+        </div>
+
+        <div className="ch-body">
+          <div className="ch-yaxis">
+            <span>{hi_t}°C</span>
+            <span>{Math.round((lo_t + hi_t) / 2)}°C</span>
+            <span>{lo_t}°C</span>
+          </div>
+
+          <WaveformPlot
+            id="c2"
+            w={300}
+            h={100}
+            lines={[
+              { v: nz(t_c, lo_t, hi_t), color: thermColor, width: 2.2, dot: true, area: true }
+            ]}
+            thresholds={[
+              ...(yy(crit_t, lo_t, hi_t) >= 0 && yy(crit_t, lo_t, hi_t) <= 1
+                ? [
+                    {
+                      normY: yy(crit_t, lo_t, hi_t),
+                      label: `${crit_t}°C Critical Limit`,
+                      color: '#D32F2F',
+                      bg: 'rgba(254, 242, 242, 0.95)',
+                      border: '#F87171',
+                      dash: '4 3'
+                    }
+                  ]
+                : []),
+              ...(yy(warn_t, lo_t, hi_t) >= 0 && yy(warn_t, lo_t, hi_t) <= 1
+                ? [
+                    {
+                      normY: yy(warn_t, lo_t, hi_t),
+                      label: `${warn_t}°C Warning`,
+                      color: '#B45309',
+                      bg: 'rgba(254, 243, 199, 0.95)',
+                      border: '#FCD34D',
+                      dash: '3 3'
+                    }
+                  ]
+                : [])
+            ]}
+          />
+        </div>
+
+        <div className="ch-foot">
+          <span>Continuous Limit: {warn_t}°C</span>
+          <span>Thermistor Response</span>
+        </div>
+      </div>
+
+      {/* ── CARD 3: POWER & DRIVE ── */}
+      <div className="ch">
+        <div className="ch-head">
+          <div className="ch-top">
+            <span className="ch-name">Power & Drive</span>
+            <span className={`ch-pill ${powerPill.c}`}>{powerPill.l}</span>
+          </div>
+          <div className="ch-val-row">
+            <div className="ch-main" style={{ color: curColor }}>
+              {curC.toFixed(2)} <span className="ch-unit">A</span>
+            </div>
+            <div className="ch-sub">
+              Spindle: <b>{curRPM} RPM</b>
+            </div>
+          </div>
+        </div>
+
+        <div className="ch-body">
+          <div className="ch-yaxis">
+            <span>{hi_c.toFixed(1)}A</span>
+            <span>{(hi_c * 0.5).toFixed(1)}A</span>
+            <span>0.0A</span>
+          </div>
+
+          <WaveformPlot
+            id="c3"
+            w={300}
+            h={100}
+            lines={[
+              { v: nz(c_a, 0, hi_c), color: curColor, width: 2.2, dot: true, area: true }
+            ]}
+            thresholds={[
+              {
+                normY: yy(7.5, 0, hi_c),
+                label: '7.5 A Rated Trip Limit',
+                color: '#D32F2F',
+                bg: 'rgba(254, 242, 242, 0.95)',
+                border: '#F87171',
+                dash: '4 3'
+              }
+            ]}
+          />
+        </div>
+
+        <div className="ch-foot">
+          <span>Rated: 5.2 A @ 4950 RPM</span>
+          <span>Inverter Current Sense</span>
+        </div>
+      </div>
+    </div>
+  );
 });

@@ -1,6 +1,7 @@
 import type { ChaosRequest, Machine, Maintenance, Tick } from './types';
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 export const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/telemetry/live';
+// Demo mode is the safe default; live mode must be explicitly enabled.
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } });
@@ -17,6 +18,11 @@ export async function downloadWorkOrder(machineId: string): Promise<Blob> {
   if (!response.ok) throw new Error(`PDF request failed (${response.status})`);
   return response.blob();
 }
+export const signOffWorkOrder = (body: { machine_id: string; technician: string; notes?: string; part_replaced?: string }) =>
+  request<{ status: string; action: string; technician: string; part: string; date: string }>('/work-order/sign-off', { method: 'POST', body: JSON.stringify(body) });
+
+export const notifyCritical = (machineId: string) =>
+  request<{ status: string; preview_url?: string; dispatched_to: any }>(`/notify/critical?machine_id=${encodeURIComponent(machineId)}`, { method: 'POST' });
 
 function pdfText(value: string): string {
   return value.replace(/[\r\n]+/g, ' ').replace(/[^\x20-\x7e]/g, '?').replace(/[\\()]/g, '\\$&');
@@ -36,7 +42,7 @@ export function createMockWorkOrder(machineId: string, tick: Tick | undefined): 
     .slice(0, 4)
     .map(item => `${item.sensor}: ${(item.weight * 100).toFixed(1)}%`);
   const lines = [
-    'IPM-MFDS  |  AUTOMATED MAINTENANCE WORK ORDER',
+    'MachinexAI  |  AUTOMATED MAINTENANCE WORK ORDER',
     `Machine: ${machineId}`,
     `Generated: ${new Date().toISOString()}`,
     `Health: ${tick?.health?.status ?? 'WARNING'}  |  Score: ${tick?.health?.score ?? '--'}`,
